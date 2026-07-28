@@ -8,7 +8,7 @@ Accès réservé à **cyril.samson41@gmail.com**.
 
 ## Architecture
 
-Identique au [hub admin](https://github.com/Cyril25/OFilDuDoubsAdmin), dont `auth.js`
+Identique au [hub admin](https://github.com/Cyril25/Admin), dont `auth.js`
 et `style.css` sont des copies conformes. **Même projet Firebase** : une seule console,
 une seule liste de domaines autorisés, un seul jeu de règles Firestore.
 
@@ -38,7 +38,7 @@ doivent rester identiques, penser à reporter les corrections des deux côtés.
    - **Authentication → Settings → Authorized domains** → ajouter
      `collections.ofildudoubs.fr`
    - copier l'objet `firebaseConfig` du hub dans `config.js`
-2. **GitHub** — dépôt public `Cyril25/OFilDuDoubsCollections`, puis
+2. **GitHub** — dépôt public `Cyril25/Collections`, puis
    **Settings → Pages** : branche `main`, dossier `/ (root)`. Le `CNAME` renseigne le
    domaine custom ; cocher **Enforce HTTPS** une fois le certificat émis.
 3. **DNS Cloudflare** — zone `ofildudoubs.fr` :

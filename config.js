@@ -1,7 +1,7 @@
 // ============================================================
 // config.js — collections.ofildudoubs.fr
 // ============================================================
-// Meme projet Firebase que le hub admin (OFilDuDoubsAdmin) :
+// Meme projet Firebase que le hub admin (repo Admin) :
 // une seule console, une seule liste de domaines autorises.
 // Copier ici le MEME objet FIREBASE_CONFIG que dans le hub.
 //
