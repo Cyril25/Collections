@@ -41,13 +41,12 @@ doivent rester identiques, penser à reporter les corrections des deux côtés.
 2. **GitHub** — dépôt public `Cyril25/Collections`, puis
    **Settings → Pages** : branche `main`, dossier `/ (root)`. Le `CNAME` renseigne le
    domaine custom ; cocher **Enforce HTTPS** une fois le certificat émis.
-3. **DNS Cloudflare** — zone `ofildudoubs.fr` :
+3. **DNS OVH** — le domaine `ofildudoubs.fr` est géré chez OVH, pas chez Cloudflare.
+   Manager OVH → *Noms de domaine* → `ofildudoubs.fr` → **Zone DNS** → *Ajouter une entrée* :
 
-   | Type | Nom | Cible | Proxy |
-   |---|---|---|---|
-   | CNAME | `collections` | `cyril25.github.io` | **DNS only** (nuage gris) |
-
-   Le proxy orange casse l'émission du certificat Let's Encrypt de GitHub Pages.
+   | Type | Sous-domaine | Cible |
+   |---|---|---|
+   | CNAME | `collections` | `cyril25.github.io.` |
 
 ## Développement local
 
