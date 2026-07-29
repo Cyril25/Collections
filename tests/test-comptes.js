@@ -147,6 +147,10 @@ verifie('Le HTML ne contient que des points a la place',
   html.includes('••••••••'));
 verifie('Un compte sans mot de passe le dit',
   html.includes('Pas de mot de passe enregistré'));
+// c3 n'a pas de libelle : rien ne doit s'afficher a la place. Un
+// « Compte » generique n'apprend rien et vole la place de l'email.
+verifie('Un compte sans libelle n\'affiche pas de libelle de secours',
+  !html.includes('>Compte<'), 'un libelle generique est rendu');
 
 // --- 3. Reveler / masquer ----------------------------------------
 console.log('\n3. Reveler et masquer');

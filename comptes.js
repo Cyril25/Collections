@@ -237,10 +237,12 @@ function renderCompte(compte) {
     var idAttr = jsAttr(compte.id);
     var idHtml = escapeAttr(compte.id);
 
+    // Pas de libellé, pas de ligne : un « Compte » générique n'apprend
+    // rien et vole la place de l'email, qui identifie déjà le compte.
     var entete = (compte.principal
             ? '<span class="badge badge-principal"><i class="fa-solid fa-star"></i>principal</span>'
             : '')
-        + '<span class="compte-libelle">' + escapeHtml(compte.libelle || 'Compte') + '</span>';
+        + (compte.libelle ? '<span class="compte-libelle">' + escapeHtml(compte.libelle) + '</span>' : '');
 
     var ligneEmail = compte.email
         ? '<div class="compte-ligne">'
