@@ -64,8 +64,28 @@ const FakeURL = {
 const presseP = [];
 const navigator = { clipboard: { writeText(t) { presseP.push(t); return Promise.resolve(); } } };
 
+// Faux Firestore : on veut verifier ce qui PART EN BASE, pas seulement
+// ce que l'ecran affiche. Le reordonnancement n'a pas d'autre trace.
+const ecritures = [];
+const fauxDb = {
+  batch() {
+    const operations = [];
+    return {
+      update(ref, data) { operations.push({ type: 'update', id: ref.id, data }); },
+      set(ref, data) { operations.push({ type: 'set', id: ref.id, data }); },
+      delete(ref) { operations.push({ type: 'delete', id: ref.id }); },
+      commit() { operations.forEach((o) => ecritures.push(o)); return Promise.resolve(); },
+    };
+  },
+  collection() {
+    return {
+      doc(id) { return { id: id || 'nouveau-doc' }; },
+      onSnapshot() {},
+    };
+  },
+};
 const firebase = {
-  firestore: Object.assign(() => ({}), {
+  firestore: Object.assign(() => fauxDb, {
     Timestamp: { fromDate: (d) => ({ toDate: () => d }) },
     FieldValue: { serverTimestamp: () => ({ __serveur: true }) },
   }),
@@ -94,6 +114,8 @@ sandbox.fournisseurs = [
   { id: 'f2', type: 'fournisseur', nom: 'INCM Portugal', site: '', notes: '' },
   { id: 'f3', type: 'fournisseur', nom: "MTM Monaco & Cie", site: 'mtm.mc', notes: '' },
 ];
+// « ordre » volontairement absent partout au depart : c'est l'etat des
+// comptes crees avant le glisser-deposer.
 sandbox.comptes = [
   { id: 'c1', type: 'compte', fournisseurId: 'f1', libelle: 'Compte principal',
     email: 'cyril.samson@free.fr', motDePasse: 'A<b>Str0ng&Pass', principal: true, notes: 'Numéro client 4471',
@@ -106,6 +128,9 @@ sandbox.comptes = [
     email: 'cyril@incm.pt', identifiant: 'csamson', motDePasse: '', principal: true },
 ];
 sandbox.premierChargement = false;
+// onHubReady() n'est pas appele hors navigateur : on branche le faux
+// Firestore a la main.
+sandbox.db = fauxDb;
 
 let echecs = 0;
 function verifie(nom, condition, detail) {
@@ -232,8 +257,96 @@ verifie('Le compte principal passe devant',
 verifie('Un fournisseur sans compte rend une liste vide',
   sandbox.comptesDe('f3').length === 0);
 
-// --- 7. Recherche -----------------------------------------------
-console.log('\n7. Recherche');
+// --- 7. Reordonner au glisser-deposer ----------------------------
+console.log('\n7. Reordonner au glisser-deposer');
+const rangs = () => sandbox.comptesDe('f4').map((c) => c.id).join(',');
+const evenement = () => ({ preventDefault() {}, dataTransfer: null });
+
+// Quatre comptes chez un meme fournisseur, dont le principal.
+sandbox.fournisseurs.push({ id: 'f4', type: 'fournisseur', nom: 'Ordre & Cie' });
+sandbox.comptes.push(
+  { id: 'd0', type: 'compte', fournisseurId: 'f4', libelle: 'Le principal', email: 'p@x.fr', principal: true, ordre: 0 },
+  { id: 'd1', type: 'compte', fournisseurId: 'f4', libelle: 'Premier', email: 'a@x.fr', ordre: 1 },
+  { id: 'd2', type: 'compte', fournisseurId: 'f4', libelle: 'Deuxieme', email: 'b@x.fr', ordre: 2 },
+  { id: 'd3', type: 'compte', fournisseurId: 'f4', libelle: 'Troisieme', email: 'c@x.fr', ordre: 3 }
+);
+sandbox.render();
+verifie('Ordre de depart', rangs() === 'd0,d1,d2,d3', rangs());
+
+// Descendre d1 sur d3 : on se deplace VERS la cible, donc on passe apres.
+function glisserSur(sourceId, cibleId) {
+  ecritures.length = 0;
+  sandbox.glisseId = sourceId;
+  sandbox.deposer(evenement(), cibleId);
+  // Le faux Firestore n'a pas d'ecouteur : on rejoue a la main ce que
+  // onSnapshot ferait, pour que le tri suivant voie les nouveaux rangs.
+  ecritures.forEach((e) => {
+    const compte = sandbox.comptes.find((c) => c.id === e.id);
+    if (compte) Object.assign(compte, e.data);
+  });
+}
+
+glisserSur('d1', 'd3');
+verifie('Descendre une fiche la place APRES la cible',
+  rangs() === 'd0,d2,d3,d1', rangs());
+
+glisserSur('d3', 'd2');
+verifie('Remonter une fiche la place AVANT la cible',
+  rangs() === 'd0,d3,d2,d1', rangs());
+
+// Deposer sur le principal = « juste apres lui », puisqu'il ne bouge pas.
+glisserSur('d1', 'd0');
+verifie('Deposer sur le principal place la fiche juste apres lui',
+  rangs() === 'd0,d1,d3,d2', rangs());
+verifie('Le principal garde le rang 0 en base',
+  sandbox.comptes.find((c) => c.id === 'd0').ordre === 0,
+  sandbox.comptes.find((c) => c.id === 'd0').ordre);
+
+// Les rangs ecrits doivent etre 0,1,2,3 — sans trou, sinon un tri
+// ulterieur repartirait dans le desordre.
+const rangsEnBase = sandbox.comptesDe('f4').map((c) => c.ordre).join(',');
+verifie('Les rangs en base sont contigus et dans l\'ordre affiche',
+  rangsEnBase === '0,1,2,3', rangsEnBase);
+
+// Rien ne doit partir en base si la fiche ne bouge pas.
+ecritures.length = 0;
+sandbox.glisseId = 'd1';
+sandbox.deposer(evenement(), 'd1');
+verifie('Deposer une fiche sur elle-meme n\'ecrit rien', ecritures.length === 0);
+
+// Un compte ne change pas de fournisseur par glissement : les rangs sont
+// relatifs a un fournisseur, et la fiche disparaitrait de sa colonne.
+ecritures.length = 0;
+sandbox.glisseId = 'd1';
+sandbox.deposer(evenement(), 'c1');
+verifie('Un depot chez un autre fournisseur est refuse', ecritures.length === 0);
+
+// Le principal l'emporte sur son rang : c'est une promesse de l'interface.
+sandbox.comptes.find((c) => c.id === 'd0').ordre = 99;
+verifie('Le principal reste en tete meme avec un rang eleve',
+  sandbox.comptesDe('f4')[0].id === 'd0', rangs());
+sandbox.comptes.find((c) => c.id === 'd0').ordre = 0;
+
+// Sans « ordre », on retombe sur l'alphabet — le cas des comptes crees
+// avant cette fonctionnalite.
+verifie('Sans rang, le tri reste alphabetique',
+  sandbox.comptesDe('f1').map((c) => c.id).join(',') === 'c1,c2',
+  sandbox.comptesDe('f1').map((c) => c.id).join(','));
+
+// La poignee arme puis desarme le glisser : sans ca, le texte de la
+// fiche resterait non selectionnable apres un simple clic.
+sandbox.render();
+sandbox.armerGlisser('d1');
+verifie('La poignee rend la fiche deplacable', elements['compte-d1'].draggable === true);
+sandbox.desarmerGlisser();
+verifie('Le relachement la rend a nouveau selectionnable',
+  elements['compte-d1'].draggable === false);
+
+verifie('Le principal n\'a pas de poignee de deplacement',
+  /compte-poignee--fixe/.test(elements['fournisseurs-list'].innerHTML));
+
+// --- 8. Recherche -----------------------------------------------
+console.log('\n8. Recherche');
 elements['search-input'].value = 'free.fr';
 sandbox.render();
 verifie('Chercher une adresse retrouve le fournisseur qui l\'utilise',
@@ -256,7 +369,7 @@ elements['search-input'].value = '';
 sandbox.render();
 
 // --- 7. Echappement ----------------------------------------------
-console.log('\n8. Echappement');
+console.log('\n9. Echappement');
 const decodeHtml = (s) => s.replace(/&quot;/g, '"').replace(/&#39;/g, "'")
   .replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&');
 let souci = null;
@@ -268,17 +381,28 @@ verifie('« MTM Monaco & Cie » ne casse pas le rendu',
   elements['fournisseurs-list'].innerHTML.includes('MTM Monaco &amp; Cie'));
 
 // --- 8. Export ---------------------------------------------------
-console.log('\n9. Export');
+console.log('\n10. Export');
 sandbox.exporterJson();
 verifie('Un fichier est telecharge', telechargements.length === 1);
 const contenu = JSON.parse(blobs.get(telechargements[0].href).parts[0]);
-verifie('Les 3 fournisseurs sont exportes', contenu.fournisseurs.length === 3);
+// « Ordre & Cie » a ete ajoute par la section 7 : l'export doit le voir
+// lui aussi, sans quoi la sauvegarde serait partielle.
+verifie('Tous les fournisseurs sont exportes',
+  contenu.fournisseurs.length === sandbox.fournisseurs.length,
+  contenu.fournisseurs.length + ' exportes pour ' + sandbox.fournisseurs.length + ' en memoire');
 verifie('Les comptes sont imbriques sous leur fournisseur',
   contenu.fournisseurs.find((f) => f.nom === 'Monnaie de Paris').comptes.length === 2);
 // L'export est trie par nom : on cherche par nom, pas par indice.
 verifie('L\'export est trie par nom de fournisseur',
-  contenu.fournisseurs.map((f) => f.nom).join('|') === 'INCM Portugal|Monnaie de Paris|MTM Monaco & Cie',
+  contenu.fournisseurs.map((f) => f.nom).join('|')
+    === 'INCM Portugal|Monnaie de Paris|MTM Monaco & Cie|Ordre & Cie',
   contenu.fournisseurs.map((f) => f.nom).join('|'));
+// Les comptes sortent dans l'ordre affiche, pas dans celui de la base :
+// une sauvegarde qui perd l'ordre choisi le perd pour de bon.
+verifie('Les comptes sont exportes dans l\'ordre du glisser-deposer',
+  contenu.fournisseurs.find((f) => f.nom === 'Ordre & Cie').comptes
+    .map((c) => c.libelle).join(',') === 'Le principal,Premier,Troisieme,Deuxieme',
+  contenu.fournisseurs.find((f) => f.nom === 'Ordre & Cie').comptes.map((c) => c.libelle).join(','));
 // L'export est une sauvegarde : incomplet, il ne servirait a rien.
 const mdp = contenu.fournisseurs
   .find((f) => f.nom === 'Monnaie de Paris').comptes

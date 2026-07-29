@@ -32,6 +32,13 @@ Le reste couvre l'unicité du compte principal, la suppression en cascade, et le
 que la recherche ne porte pas sur les mots de passe — sinon on pourrait en confirmer un
 par tâtonnement sans jamais l'afficher.
 
+**Le glisser-déposer passe par un faux Firestore** qui capture les écritures : on
+vérifie les rangs qui *partent réellement en base*, pas seulement l'ordre affiché. Le
+réordonnancement n'a aucune autre trace, et un rang mal écrit ne se verrait qu'au
+rechargement suivant. Les cas couverts : descendre, remonter, déposer sur le principal
+(qui garde le rang 0), rangs contigus sans trou, dépôt sur soi-même et dépôt chez un
+autre fournisseur — les deux derniers ne doivent rien écrire du tout.
+
 ### `test-achats.js` — où porte l'effort
 
 **La détection des doublons.** C'est la seule chose du site qu'on ne peut pas vérifier en

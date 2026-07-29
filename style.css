@@ -961,6 +961,45 @@ body.login-page {
     margin-bottom: 6px;
 }
 
+.compte-entete-gauche {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+}
+
+/* La poignee : seule zone par laquelle la fiche se saisit. Le curseur
+   « grab » est le seul indice qu'elle est deplacable, d'ou le contraste
+   au survol de la fiche. */
+.compte-poignee {
+    color: var(--color-border);
+    cursor: grab;
+    font-size: 0.85rem;
+    padding: 2px;
+    flex-shrink: 0;
+    transition: color var(--transition-fast);
+}
+.compte:hover .compte-poignee { color: var(--color-text-muted); }
+.compte-poignee:active { cursor: grabbing; }
+
+/* Le principal ne bouge pas : punaise, pas poignee, et pas de curseur
+   qui laisserait croire le contraire. */
+.compte-poignee--fixe {
+    cursor: help;
+    color: #C9A227;
+}
+.compte:hover .compte-poignee--fixe { color: #C9A227; }
+
+.compte--glisse { opacity: 0.4; }
+
+/* La cible du depot : un liseré franc, sans decalage de mise en page —
+   d'ou l'outline plutot qu'une bordure, qui pousserait les voisines. */
+.compte--cible {
+    outline: 2px dashed var(--color-accent);
+    outline-offset: 1px;
+    background: #fff;
+}
+
 .compte-libelle {
     font-weight: 500;
     font-size: 0.9rem;
@@ -1020,8 +1059,8 @@ body.login-page {
    d'affilee se lisent comme une liste de courses. */
 .modal-section {
     grid-column: 1 / -1;
-    margin: 8px 0 0;
-    padding-top: 12px;
+    margin: 2px 0 -2px;
+    padding-top: 8px;
     border-top: 1px solid var(--color-border-light);
     font-size: 0.72rem;
     text-transform: uppercase;
@@ -1037,8 +1076,15 @@ body.login-page {
 /* Modale a trois colonnes, pour les formulaires qui debordaient en deux.
    Elargir sans repasser en trois colonnes ne servirait a rien : ce sont
    les RANGEES qui font la hauteur, pas la largeur des champs. */
-.modal--large { max-width: 760px; }
-.modal-form--3 { grid-template-columns: repeat(3, 1fr); }
+/* Rembourrage et interlignes reduits : sur un portable 768 px de haut,
+   90vh laisse moins de 600 px utiles une fois le chrome du navigateur
+   deduit, et chaque marge compte. */
+.modal--large { max-width: 760px; padding: var(--spacing-lg); }
+.modal--large .modal-title { margin-bottom: var(--spacing-sm); }
+.modal-form--3 {
+    grid-template-columns: repeat(3, 1fr);
+    gap: 8px 12px;
+}
 .field--2 { grid-column: span 2; }
 
 /* Sous 800 px la modale n'a plus sa largeur pleine : trois colonnes y

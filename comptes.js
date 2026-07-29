@@ -97,15 +97,27 @@ function trouverCompte(id) {
     return null;
 }
 
-// Le compte principal d'abord, puis par libellé : l'ordre dans lequel on
-// les cherche des yeux.
+// Le compte principal d'abord — toujours, quel que soit son rang : c'est
+// une promesse de l'interface, pas une conséquence de l'ordre choisi.
+// Ensuite l'ordre décidé au glisser-déposer, et pour les comptes créés
+// avant cette possibilité (« ordre » absent), l'alphabet.
 function comptesDe(fournisseurId) {
     return comptes.filter(function(compte) {
         return compte.fournisseurId === fournisseurId;
     }).sort(function(a, b) {
         if (!!b.principal !== !!a.principal) return b.principal ? 1 : -1;
+        var rangA = typeof a.ordre === 'number' ? a.ordre : Infinity;
+        var rangB = typeof b.ordre === 'number' ? b.ordre : Infinity;
+        if (rangA !== rangB) return rangA - rangB;
         return (a.libelle || a.email || '').localeCompare(b.libelle || b.email || '', 'fr');
     });
+}
+
+function indexDans(liste, id) {
+    for (var i = 0; i < liste.length; i++) {
+        if (liste[i].id === id) return i;
+    }
+    return -1;
 }
 
 // Un « javascript: » ou un « data: » collé dans le champ Site deviendrait
@@ -252,13 +264,30 @@ function renderFournisseur(fournisseur) {
 function renderCompte(compte) {
     var idAttr = jsAttr(compte.id);
     var idHtml = escapeAttr(compte.id);
+    var estPrincipal = !!compte.principal;
 
     // Pas de libellé, pas de ligne : un « Compte » générique n'apprend
     // rien et vole la place de l'email, qui identifie déjà le compte.
-    var entete = (compte.principal
+    var entete = (estPrincipal
             ? '<span class="badge badge-principal"><i class="fa-solid fa-star"></i>principal</span>'
             : '')
         + (compte.libelle ? '<span class="compte-libelle">' + escapeHtml(compte.libelle) + '</span>' : '');
+
+    // Une poignée, pas la fiche entière : rendre l'article `draggable`
+    // empêcherait de sélectionner l'email ou le mot de passe à la souris.
+    // Le principal en reçoit une punaise à la place — il ne se déplace
+    // pas, mais il reste une cible de dépôt (« mettre juste après lui »).
+    var poignee = estPrincipal
+        ? '<span class="compte-poignee compte-poignee--fixe" '
+          + 'title="Le compte principal reste toujours en tête"><i class="fa-solid fa-thumbtack"></i></span>'
+        : '<span class="compte-poignee" title="Glisser pour réordonner" '
+          + 'onmousedown="armerGlisser(\'' + idAttr + '\')"><i class="fa-solid fa-grip-vertical"></i></span>';
+
+    var attributsGlisser = (estPrincipal ? ''
+            : ' ondragstart="debutGlisser(event, \'' + idAttr + '\')" ondragend="finGlisser(event)"')
+        + ' ondragover="survolGlisser(event, \'' + idAttr + '\')"'
+        + ' ondragleave="quitterGlisser(event, \'' + idAttr + '\')"'
+        + ' ondrop="deposer(event, \'' + idAttr + '\')"';
 
     var ligneEmail = compte.email
         ? '<div class="compte-ligne">'
@@ -322,9 +351,9 @@ function renderCompte(compte) {
         +   '<span class="compte-valeur">Pas de mot de passe enregistré</span>'
         + '</div>';
 
-    return '<article class="compte">'
+    return '<article class="compte" id="compte-' + idHtml + '"' + attributsGlisser + '>'
         + '<div class="compte-entete">'
-        +   '<div>' + entete + '</div>'
+        +   '<div class="compte-entete-gauche">' + poignee + entete + '</div>'
         +   '<button type="button" class="icon-btn" title="Modifier ce compte" '
         +     'onclick="ouvrirModaleCompte(\'' + jsAttr(compte.fournisseurId) + '\', \'' + idAttr + '\')">'
         +     '<i class="fa-solid fa-pen"></i></button>'
@@ -335,7 +364,134 @@ function renderCompte(compte) {
 }
 
 // ------------------------------------------------------------
-// 5. Révéler / masquer / copier
+// 5. Réordonner les comptes au glisser-déposer
+// ------------------------------------------------------------
+// Le rang vit dans un champ « ordre » (entier, 0 = premier). Il est
+// réécrit en entier pour le fournisseur concerné à chaque dépôt : avec
+// deux ou trois comptes, chercher à n'écrire que le strict minimum
+// coûterait plus en complexité que les écritures épargnées.
+var glisseId = null;
+var carteArmee = null;
+var cibleSurvolee = null;
+
+function carteDe(id) {
+    return document.getElementById('compte-' + id);
+}
+
+function classerCarte(id, modificateur) {
+    var carte = carteDe(id);
+    if (carte) carte.className = 'compte' + (modificateur ? ' ' + modificateur : '');
+}
+
+// La fiche ne devient déplaçable que le temps d'un appui sur la poignée.
+function armerGlisser(id) {
+    var carte = carteDe(id);
+    if (!carte) return;
+    carte.draggable = true;
+    carteArmee = id;
+}
+
+function desarmerGlisser() {
+    if (!carteArmee) return;
+    var carte = carteDe(carteArmee);
+    if (carte) carte.draggable = false;
+    carteArmee = null;
+}
+
+function debutGlisser(evenement, id) {
+    glisseId = id;
+    if (evenement.dataTransfer) {
+        evenement.dataTransfer.effectAllowed = 'move';
+        // Firefox refuse de démarrer un glisser sans données associées.
+        evenement.dataTransfer.setData('text/plain', id);
+    }
+    classerCarte(id, 'compte--glisse');
+}
+
+function survolGlisser(evenement, id) {
+    if (!glisseId || id === glisseId) return;
+    var source = trouverCompte(glisseId);
+    var cible = trouverCompte(id);
+    // Deux fournisseurs différents : pas de preventDefault, donc le
+    // navigateur refuse le dépôt de lui-même, sans message à écrire.
+    if (!source || !cible || source.fournisseurId !== cible.fournisseurId) return;
+    evenement.preventDefault();
+    if (evenement.dataTransfer) evenement.dataTransfer.dropEffect = 'move';
+    if (cibleSurvolee === id) return;
+    eteindreCible();
+    classerCarte(id, 'compte--cible');
+    cibleSurvolee = id;
+}
+
+function quitterGlisser(evenement, id) {
+    if (cibleSurvolee === id) eteindreCible();
+}
+
+function eteindreCible() {
+    if (!cibleSurvolee) return;
+    classerCarte(cibleSurvolee, '');
+    cibleSurvolee = null;
+}
+
+function finGlisser() {
+    if (glisseId) classerCarte(glisseId, '');
+    eteindreCible();
+    desarmerGlisser();
+    glisseId = null;
+}
+
+function deposer(evenement, cibleId) {
+    if (evenement && evenement.preventDefault) evenement.preventDefault();
+    var source = trouverCompte(glisseId);
+    var cible = trouverCompte(cibleId);
+    finGlisser();
+    if (!source || !cible || source.id === cible.id) return;
+    if (source.fournisseurId !== cible.fournisseurId) return;
+
+    var liste = comptesDe(source.fournisseurId);
+    var depart = indexDans(liste, source.id);
+    var arrivee = indexDans(liste, cible.id);
+    if (depart === -1 || arrivee === -1) return;
+
+    liste.splice(depart, 1);
+    // On se déplace VERS la cible : en descendant on passe après elle, en
+    // remontant on passe avant. Aucune géométrie à interpréter, donc le
+    // geste se comporte pareil que les fiches soient l'une sous l'autre
+    // ou côte à côte — ce que la grille fait selon la largeur d'écran.
+    liste.splice(indexDans(liste, cible.id) + (depart < arrivee ? 1 : 0), 0, source);
+    enregistrerOrdre(liste);
+}
+
+function enregistrerOrdre(liste) {
+    // Le principal reprend le rang 0 : ce que la liste affiche et ce que
+    // la base contient doivent raconter la même histoire. Le tri est
+    // stable, les autres gardent donc l'ordre qu'on vient de leur donner.
+    liste.sort(function(a, b) { return (b.principal ? 1 : 0) - (a.principal ? 1 : 0); });
+
+    var lot = db.batch();
+    var aChange = false;
+    liste.forEach(function(compte, rang) {
+        if (compte.ordre === rang) return;
+        // Pas de `updatedAt` ici : déplacer une fiche n'est pas la
+        // modifier, et « modifié le » doit rester fiable.
+        lot.update(db.collection('fournisseurs').doc(compte.id), { ordre: rang });
+        aChange = true;
+    });
+    if (!aChange) return;
+
+    lot.commit().catch(function(erreur) {
+        console.error(erreur);
+        showToast('Réordonnancement impossible : ' + erreur.message, 'error');
+    });
+}
+
+// Un appui sur la poignée sans glisser laisserait la fiche déplaçable,
+// et donc son texte non sélectionnable. Pendant un vrai glisser, c'est
+// « dragend » qui s'occupe du ménage, pas « mouseup ».
+document.addEventListener('mouseup', desarmerGlisser);
+
+// ------------------------------------------------------------
+// 6. Révéler / masquer / copier
 // ------------------------------------------------------------
 function appliquerMdp(id, visible) {
     var champ = document.getElementById('mdp-' + id);
@@ -408,7 +564,7 @@ function copierAdresse(id) {
 }
 
 // ------------------------------------------------------------
-// 6. Modale fournisseur
+// 7. Modale fournisseur
 // ------------------------------------------------------------
 function ouvrirModaleFournisseur(id) {
     fournisseurEnEdition = id || null;
@@ -481,7 +637,7 @@ function sauverFournisseur() {
 }
 
 // ------------------------------------------------------------
-// 7. Modale compte
+// 8. Modale compte
 // ------------------------------------------------------------
 // Les moyens de paiement se suggèrent depuis ceux déjà saisis : rien à
 // maintenir en dur, et « carte BNP » s'écrit pareil partout dès la
@@ -609,7 +765,7 @@ function sauverCompte() {
 }
 
 // ------------------------------------------------------------
-// 8. Suppression
+// 9. Suppression
 // ------------------------------------------------------------
 function ouvrirSuppressionFournisseur() {
     if (!fournisseurEnEdition) return;
@@ -672,7 +828,7 @@ function confirmerSuppression() {
 }
 
 // ------------------------------------------------------------
-// 9. Export JSON
+// 10. Export JSON
 // ------------------------------------------------------------
 // Même filet que sur la page Achats : Firestore en plan gratuit n'offre
 // aucune sauvegarde. ⚠ Ce fichier contient les mots de passe EN CLAIR et
@@ -730,7 +886,7 @@ function exporterJson() {
 }
 
 // ------------------------------------------------------------
-// 10. Raccourcis clavier
+// 11. Raccourcis clavier
 // ------------------------------------------------------------
 document.addEventListener('keydown', function(evenement) {
     if (evenement.key !== 'Escape') return;

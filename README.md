@@ -144,7 +144,7 @@ pris que le projet Extérieur du hub :
 | `type` | Champs |
 |---|---|
 | `fournisseur` | `nom` (obligatoire), `cle` (nom normalisé), `site`, `notes` |
-| `compte` | `fournisseurId`, `libelle`, `email` (obligatoire), `identifiant`, `motDePasse`, `telephone`, `modePaiement`, `destinataire`, `rue`, `codePostal`, `ville`, `principal`, `notes` |
+| `compte` | `fournisseurId`, `libelle`, `email` (obligatoire), `identifiant`, `motDePasse`, `telephone`, `modePaiement`, `destinataire`, `rue`, `codePostal`, `ville`, `principal`, `ordre`, `notes` |
 
 Le `modePaiement` d'un compte porte **le même vocabulaire** que celui d'une ligne
 d'achat (« carte BNP », « PayPal ») : ici le moyen enregistré chez ce fournisseur, là
@@ -167,6 +167,31 @@ d'un coup le fournisseur chez qui cette adresse est utilisée.
 `principal` est **unique par fournisseur** : cocher un compte décoche l'ancien dans le
 même lot d'écriture, sinon deux comptes se disent principaux et l'étoile ne veut plus
 rien dire. Le premier compte créé chez un fournisseur est principal par défaut.
+
+### L'ordre des comptes
+
+Un champ `ordre` (entier, 0 = premier) se règle au **glisser-déposer**, par la poignée
+à gauche de chaque fiche. Trois décisions qui méritent d'être écrites :
+
+- **Le principal passe toujours devant**, quel que soit son `ordre`. C'est une promesse
+  de l'interface, pas une conséquence du rang : il porte une punaise au lieu d'une
+  poignée, et reste une cible de dépôt valide — y déposer une fiche revient à la placer
+  juste après lui.
+- **On se déplace vers la cible** : en descendant, la fiche passe *après* elle ; en
+  remontant, *avant*. Aucune géométrie n'est interprétée, donc le geste se comporte
+  pareil que les fiches soient l'une sous l'autre ou côte à côte — ce que la grille
+  fait selon la largeur de l'écran.
+- **Seule la poignée est saisissable**, pas la fiche entière : rendre l'article
+  `draggable` empêcherait de sélectionner l'email ou le mot de passe à la souris. Elle
+  n'est déplaçable que le temps d'un appui sur la poignée.
+
+Les rangs sont réécrits **en entier** pour le fournisseur concerné à chaque dépôt.
+Avec deux ou trois comptes, n'écrire que le strict minimum coûterait plus en complexité
+que les écritures épargnées. Les comptes créés avant cette possibilité n'ont pas de
+`ordre` et retombent sur l'alphabet, après ceux qui en ont un.
+
+> Le glisser-déposer HTML5 ne fonctionne pas au doigt : sur mobile, l'ordre reste celui
+> défini depuis un ordinateur.
 
 Supprimer un fournisseur supprime **ses comptes avec lui**, dans un `batch`. Sans ça
 ils resteraient orphelins : invisibles à l'écran, bien présents en base, mots de passe
