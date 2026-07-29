@@ -1009,6 +1009,31 @@ body.login-page {
     color: var(--color-text-muted);
 }
 
+/* L'adresse tient sur plusieurs lignes : l'icone et le bouton se calent
+   en haut, sinon ils flottent au milieu du bloc. */
+.compte-ligne--adresse { align-items: flex-start; padding-top: 4px; }
+.compte-ligne--adresse .compte-icone,
+.compte-ligne--adresse .icon-btn { margin-top: 2px; }
+.compte-ligne--adresse .compte-valeur { line-height: 1.45; }
+
+/* Interlignes d'un formulaire devenu long : sans reperes, douze champs
+   d'affilee se lisent comme une liste de courses. */
+.modal-section {
+    grid-column: 1 / -1;
+    margin: 8px 0 0;
+    padding-top: 12px;
+    border-top: 1px solid var(--color-border-light);
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--color-text-muted);
+}
+.modal-section:first-child {
+    margin-top: 0;
+    padding-top: 0;
+    border-top: none;
+}
+
 /* ---------- 13. Mobile : le tableau devient des fiches ---------- */
 @media (max-width: 760px) {
     .data-table {

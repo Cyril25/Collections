@@ -100,6 +100,7 @@
             <h2 class="modal-title" id="titre-compte">Nouveau compte</h2>
             <p class="modal-desc" id="fc-fournisseur"></p>
             <div class="modal-form">
+                <p class="modal-section">Identifiants</p>
                 <div class="field field--full">
                     <label for="fc-libelle">Libellé</label>
                     <input type="text" id="fc-libelle" maxlength="80" autocomplete="off"
@@ -124,6 +125,36 @@
                         <input type="checkbox" id="fc-principal"> Compte principal
                     </label>
                 </div>
+
+                <p class="modal-section">Coordonnées et livraison</p>
+                <div class="field">
+                    <label for="fc-telephone">Téléphone</label>
+                    <input type="tel" id="fc-telephone" autocomplete="off" placeholder="06 12 34 56 78">
+                </div>
+                <div class="field">
+                    <label for="fc-paiement">Moyen de paiement</label>
+                    <input type="text" id="fc-paiement" list="paiement-list" autocomplete="off"
+                           placeholder="Ex : carte Boursorama, carte BNP…">
+                    <datalist id="paiement-list"></datalist>
+                    <span class="field-hint">Le moyen enregistré chez ce fournisseur — pas un numéro de carte.</span>
+                </div>
+                <div class="field field--full">
+                    <label for="fc-destinataire">Destinataire</label>
+                    <input type="text" id="fc-destinataire" autocomplete="off" placeholder="Prénom Nom">
+                </div>
+                <div class="field field--full">
+                    <label for="fc-rue">Rue</label>
+                    <input type="text" id="fc-rue" autocomplete="off" placeholder="12 rue des Lilas">
+                </div>
+                <div class="field">
+                    <label for="fc-cp">Code postal</label>
+                    <input type="text" id="fc-cp" autocomplete="off" placeholder="25000">
+                </div>
+                <div class="field">
+                    <label for="fc-ville">Ville</label>
+                    <input type="text" id="fc-ville" autocomplete="off" placeholder="Besançon">
+                </div>
+
                 <div class="field field--full">
                     <label for="fc-notes">Notes</label>
                     <textarea id="fc-notes" rows="2" placeholder="Question secrète, numéro client, carte de fidélité…"></textarea>

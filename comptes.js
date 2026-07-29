@@ -124,6 +124,20 @@ function libelleUrl(url) {
     return String(url || '').replace(/^https?:\/\//i, '').replace(/\/$/, '');
 }
 
+// L'adresse en lignes prêtes à afficher ou à coller dans un formulaire
+// de livraison. Chaque morceau est facultatif : une adresse à moitié
+// remplie doit rendre ce qu'on en connaît, pas une ligne vide ni un
+// « undefined » au milieu.
+function adresseFormatee(compte) {
+    var lignes = [];
+    if (compte.destinataire) lignes.push(compte.destinataire);
+    if (compte.rue) lignes.push(compte.rue);
+    var villeComplete = [compte.codePostal, compte.ville]
+        .filter(function(morceau) { return !!morceau; }).join(' ');
+    if (villeComplete) lignes.push(villeComplete);
+    return lignes;
+}
+
 function cleNom(texte) {
     return String(texte == null ? '' : texte)
         .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
@@ -156,7 +170,9 @@ function correspond(fournisseur, terme) {
     var texte = (fournisseur.nom || '') + ' ' + (fournisseur.site || '') + ' ' + (fournisseur.notes || '');
     comptesDe(fournisseur.id).forEach(function(compte) {
         texte += ' ' + (compte.libelle || '') + ' ' + (compte.email || '')
-              + ' ' + (compte.identifiant || '') + ' ' + (compte.notes || '');
+              + ' ' + (compte.identifiant || '') + ' ' + (compte.notes || '')
+              + ' ' + (compte.telephone || '') + ' ' + (compte.modePaiement || '')
+              + ' ' + adresseFormatee(compte).join(' ');
     });
     return texte.toLowerCase().indexOf(terme) !== -1;
 }
@@ -260,6 +276,34 @@ function renderCompte(compte) {
         + '</div>'
         : '';
 
+    var ligneTelephone = compte.telephone
+        ? '<div class="compte-ligne">'
+        +   '<i class="fa-solid fa-phone compte-icone" title="Téléphone"></i>'
+        +   '<span class="compte-valeur">' + escapeHtml(compte.telephone) + '</span>'
+        +   '<button type="button" class="icon-btn" title="Copier le téléphone" '
+        +     'onclick="copierTelephone(\'' + idAttr + '\')"><i class="fa-solid fa-copy"></i></button>'
+        + '</div>'
+        : '';
+
+    var lignePaiement = compte.modePaiement
+        ? '<div class="compte-ligne">'
+        +   '<i class="fa-solid fa-credit-card compte-icone" title="Moyen de paiement"></i>'
+        +   '<span class="compte-valeur">' + escapeHtml(compte.modePaiement) + '</span>'
+        + '</div>'
+        : '';
+
+    // L'adresse se copie d'un bloc : c'est comme ça qu'elle se colle dans
+    // un formulaire de livraison, pas champ par champ.
+    var lignesAdresse = adresseFormatee(compte);
+    var ligneAdresse = lignesAdresse.length
+        ? '<div class="compte-ligne compte-ligne--adresse">'
+        +   '<i class="fa-solid fa-location-dot compte-icone" title="Adresse de livraison"></i>'
+        +   '<span class="compte-valeur">' + lignesAdresse.map(escapeHtml).join('<br>') + '</span>'
+        +   '<button type="button" class="icon-btn" title="Copier l\'adresse complète" '
+        +     'onclick="copierAdresse(\'' + idAttr + '\')"><i class="fa-solid fa-copy"></i></button>'
+        + '</div>'
+        : '';
+
     // Le mot de passe n'est PAS rendu ici : le HTML ne contient que des
     // points. Sa valeur arrive par textContent au clic sur l'œil, et
     // repart d'elle-même après DELAI_MASQUAGE_MS.
@@ -285,7 +329,7 @@ function renderCompte(compte) {
         +     'onclick="ouvrirModaleCompte(\'' + jsAttr(compte.fournisseurId) + '\', \'' + idAttr + '\')">'
         +     '<i class="fa-solid fa-pen"></i></button>'
         + '</div>'
-        + ligneEmail + ligneIdentifiant + ligneMdp
+        + ligneEmail + ligneIdentifiant + ligneMdp + ligneTelephone + lignePaiement + ligneAdresse
         + (compte.notes ? '<p class="compte-notes">' + escapeHtml(compte.notes) + '</p>' : '')
         + '</article>';
 }
@@ -351,6 +395,16 @@ function copierMdp(id) {
 function copierEmail(id) {
     var compte = trouverCompte(id);
     copierValeur(compte && compte.email, 'Adresse');
+}
+
+function copierTelephone(id) {
+    var compte = trouverCompte(id);
+    copierValeur(compte && compte.telephone, 'Téléphone');
+}
+
+function copierAdresse(id) {
+    var compte = trouverCompte(id);
+    copierValeur(compte ? adresseFormatee(compte).join('\n') : '', 'Adresse postale');
 }
 
 // ------------------------------------------------------------
@@ -429,6 +483,23 @@ function sauverFournisseur() {
 // ------------------------------------------------------------
 // 7. Modale compte
 // ------------------------------------------------------------
+// Les moyens de paiement se suggèrent depuis ceux déjà saisis : rien à
+// maintenir en dur, et « carte BNP » s'écrit pareil partout dès la
+// deuxième fois. Même mécanique que les collections et vendeurs de la
+// page Achats.
+function remplirPaiements() {
+    var cible = document.getElementById('paiement-list');
+    if (!cible) return;
+    var vus = {};
+    comptes.forEach(function(compte) {
+        var valeur = (compte.modePaiement || '').trim();
+        if (valeur) vus[valeur] = true;
+    });
+    cible.innerHTML = Object.keys(vus).sort().map(function(valeur) {
+        return '<option value="' + escapeAttr(valeur) + '"></option>';
+    }).join('');
+}
+
 function ouvrirModaleCompte(fournisseurId, compteId) {
     fournisseurDuCompte = fournisseurId;
     compteEnEdition = compteId || null;
@@ -439,11 +510,18 @@ function ouvrirModaleCompte(fournisseurId, compteId) {
     document.getElementById('fc-fournisseur').textContent = fournisseur
         ? 'Chez ' + (fournisseur.nom || '(sans nom)') : '';
 
+    remplirPaiements();
     document.getElementById('fc-libelle').value     = compte ? (compte.libelle || '') : '';
     document.getElementById('fc-email').value       = compte ? (compte.email || '') : '';
     document.getElementById('fc-identifiant').value = compte ? (compte.identifiant || '') : '';
     document.getElementById('fc-mdp').value         = compte ? (compte.motDePasse || '') : '';
     document.getElementById('fc-notes').value       = compte ? (compte.notes || '') : '';
+    document.getElementById('fc-telephone').value   = compte ? (compte.telephone || '') : '';
+    document.getElementById('fc-paiement').value    = compte ? (compte.modePaiement || '') : '';
+    document.getElementById('fc-destinataire').value = compte ? (compte.destinataire || '') : '';
+    document.getElementById('fc-rue').value         = compte ? (compte.rue || '') : '';
+    document.getElementById('fc-cp').value          = compte ? (compte.codePostal || '') : '';
+    document.getElementById('fc-ville').value       = compte ? (compte.ville || '') : '';
     // Le tout premier compte d'un fournisseur est le principal par défaut :
     // c'est vrai neuf fois sur dix et ça évite une case à cocher oubliée.
     document.getElementById('fc-principal').checked = compte
@@ -491,6 +569,12 @@ function sauverCompte() {
         identifiant:   document.getElementById('fc-identifiant').value.trim(),
         motDePasse:    document.getElementById('fc-mdp').value,
         notes:         document.getElementById('fc-notes').value.trim(),
+        telephone:     document.getElementById('fc-telephone').value.trim(),
+        modePaiement:  document.getElementById('fc-paiement').value.trim(),
+        destinataire:  document.getElementById('fc-destinataire').value.trim(),
+        rue:           document.getElementById('fc-rue').value.trim(),
+        codePostal:    document.getElementById('fc-cp').value.trim(),
+        ville:         document.getElementById('fc-ville').value.trim(),
         principal:     principal,
         updatedAt:     firebase.firestore.FieldValue.serverTimestamp()
     };
@@ -619,9 +703,15 @@ function exporterJson() {
                         libelle:     compte.libelle || '',
                         email:       compte.email || '',
                         identifiant: compte.identifiant || '',
-                        motDePasse:  compte.motDePasse || '',
-                        principal:   !!compte.principal,
-                        notes:       compte.notes || ''
+                        motDePasse:   compte.motDePasse || '',
+                        telephone:    compte.telephone || '',
+                        modePaiement: compte.modePaiement || '',
+                        destinataire: compte.destinataire || '',
+                        rue:          compte.rue || '',
+                        codePostal:   compte.codePostal || '',
+                        ville:        compte.ville || '',
+                        principal:    !!compte.principal,
+                        notes:        compte.notes || ''
                     };
                 })
             };

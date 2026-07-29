@@ -144,7 +144,20 @@ pris que le projet Extérieur du hub :
 | `type` | Champs |
 |---|---|
 | `fournisseur` | `nom` (obligatoire), `cle` (nom normalisé), `site`, `notes` |
-| `compte` | `fournisseurId`, `libelle`, `email` (obligatoire), `identifiant`, `motDePasse`, `principal`, `notes` |
+| `compte` | `fournisseurId`, `libelle`, `email` (obligatoire), `identifiant`, `motDePasse`, `telephone`, `modePaiement`, `destinataire`, `rue`, `codePostal`, `ville`, `principal`, `notes` |
+
+Le `modePaiement` d'un compte porte **le même vocabulaire** que celui d'une ligne
+d'achat (« carte BNP », « PayPal ») : ici le moyen enregistré chez ce fournisseur, là
+celui qui a réellement réglé la commande. Les deux se suggèrent depuis les saisies
+précédentes, ce qui les fait converger sans contrainte.
+
+L'adresse est **découpée** (destinataire / rue / CP / ville) plutôt que laissée en
+texte libre, pour pouvoir la recomposer proprement — le bouton *copier* rend les trois
+lignes prêtes à coller dans un formulaire de livraison. Une adresse à moitié remplie
+rend ce qu'on en connaît, sans ligne vide au milieu.
+
+Aucun de ces champs n'est obligatoire : une ligne absente ne s'affiche pas du tout,
+plutôt que d'occuper la place avec un libellé vide.
 
 Pourquoi pas une sous-collection `fournisseurs/{id}/comptes` : il faudrait un écouteur
 par fournisseur, ou une requête `collectionGroup` avec son index — pour une poignée de

@@ -96,9 +96,12 @@ sandbox.fournisseurs = [
 ];
 sandbox.comptes = [
   { id: 'c1', type: 'compte', fournisseurId: 'f1', libelle: 'Compte principal',
-    email: 'cyril.samson@free.fr', motDePasse: 'A<b>Str0ng&Pass', principal: true, notes: 'Numéro client 4471' },
+    email: 'cyril.samson@free.fr', motDePasse: 'A<b>Str0ng&Pass', principal: true, notes: 'Numéro client 4471',
+    telephone: '06 12 34 56 78', modePaiement: 'Carte Boursorama',
+    destinataire: 'Cyril Samson', rue: '12 rue des Lilas', codePostal: '25000', ville: 'Besançon' },
   { id: 'c2', type: 'compte', fournisseurId: 'f1', libelle: 'Second compte',
-    email: 'autre@gmail.com', motDePasse: 'deuxieme', principal: false },
+    email: 'autre@gmail.com', motDePasse: 'deuxieme', principal: false,
+    modePaiement: 'Carte BNP', destinataire: 'Cyril Samson', ville: 'Pontarlier' },
   { id: 'c3', type: 'compte', fournisseurId: 'f2', libelle: '',
     email: 'cyril@incm.pt', identifiant: 'csamson', motDePasse: '', principal: true },
 ];
@@ -189,16 +192,48 @@ const avant = presseP.length;
 sandbox.copierMdp('c3');
 verifie('Un compte sans mot de passe ne copie rien', presseP.length === avant);
 
-// --- 5. Regroupement et tri --------------------------------------
-console.log('\n5. Comptes par fournisseur');
+// --- 5. Coordonnees et adresse -----------------------------------
+console.log('\n5. Coordonnees et adresse');
+verifie('L\'adresse complete tient en trois lignes',
+  sandbox.adresseFormatee(sandbox.comptes[0]).join('\n') === 'Cyril Samson\n12 rue des Lilas\n25000 Besançon',
+  JSON.stringify(sandbox.adresseFormatee(sandbox.comptes[0])));
+// Une adresse a moitie remplie doit rendre ce qu'on en connait, sans
+// ligne vide ni « undefined » au milieu.
+verifie('Une adresse partielle saute les morceaux absents',
+  sandbox.adresseFormatee(sandbox.comptes[1]).join('\n') === 'Cyril Samson\nPontarlier',
+  JSON.stringify(sandbox.adresseFormatee(sandbox.comptes[1])));
+verifie('Aucune adresse rend une liste vide',
+  sandbox.adresseFormatee(sandbox.comptes[2]).length === 0);
+verifie('Code postal seul ne fabrique pas de ligne bancale',
+  sandbox.adresseFormatee({ codePostal: '25000' }).join('') === '25000');
+
+sandbox.copierAdresse('c1');
+verifie('L\'adresse se copie d\'un bloc, avec ses retours a la ligne',
+  presseP[presseP.length - 1] === 'Cyril Samson\n12 rue des Lilas\n25000 Besançon',
+  JSON.stringify(presseP[presseP.length - 1]));
+sandbox.copierTelephone('c1');
+verifie('Le telephone se copie', presseP[presseP.length - 1] === '06 12 34 56 78');
+
+sandbox.render();
+const htmlComplet = elements['fournisseurs-list'].innerHTML;
+verifie('Le telephone est affiche', htmlComplet.includes('06 12 34 56 78'));
+verifie('Le moyen de paiement est affiche', htmlComplet.includes('Carte Boursorama'));
+verifie('L\'adresse est affichee ligne par ligne',
+  htmlComplet.includes('Cyril Samson<br>12 rue des Lilas<br>25000 Besançon'),
+  'mise en forme de l\'adresse inattendue');
+verifie('Un compte sans coordonnees n\'affiche pas de ligne vide',
+  !htmlComplet.includes('fa-location-dot compte-icone"></i><span class="compte-valeur"></span>'));
+
+// --- 6. Regroupement et tri --------------------------------------
+console.log('\n6. Comptes par fournisseur');
 verifie('Monnaie de Paris a 2 comptes', sandbox.comptesDe('f1').length === 2);
 verifie('Le compte principal passe devant',
   sandbox.comptesDe('f1')[0].id === 'c1', sandbox.comptesDe('f1')[0].id);
 verifie('Un fournisseur sans compte rend une liste vide',
   sandbox.comptesDe('f3').length === 0);
 
-// --- 6. Recherche ------------------------------------------------
-console.log('\n6. Recherche');
+// --- 7. Recherche -----------------------------------------------
+console.log('\n7. Recherche');
 elements['search-input'].value = 'free.fr';
 sandbox.render();
 verifie('Chercher une adresse retrouve le fournisseur qui l\'utilise',
@@ -221,7 +256,7 @@ elements['search-input'].value = '';
 sandbox.render();
 
 // --- 7. Echappement ----------------------------------------------
-console.log('\n7. Echappement');
+console.log('\n8. Echappement');
 const decodeHtml = (s) => s.replace(/&quot;/g, '"').replace(/&#39;/g, "'")
   .replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&');
 let souci = null;
@@ -233,7 +268,7 @@ verifie('« MTM Monaco & Cie » ne casse pas le rendu',
   elements['fournisseurs-list'].innerHTML.includes('MTM Monaco &amp; Cie'));
 
 // --- 8. Export ---------------------------------------------------
-console.log('\n8. Export');
+console.log('\n9. Export');
 sandbox.exporterJson();
 verifie('Un fichier est telecharge', telechargements.length === 1);
 const contenu = JSON.parse(blobs.get(telechargements[0].href).parts[0]);
@@ -251,6 +286,10 @@ const mdp = contenu.fournisseurs
 verifie('Les mots de passe sont bien dans l\'export',
   mdp === 'A<b>Str0ng&Pass', 'sauvegarde incomplete : ' + mdp);
 // ...mais le fichier doit le dire, il sort de toute regle Firestore.
+verifie('L\'export porte les coordonnees et l\'adresse',
+  contenu.fournisseurs.find((f) => f.nom === 'Monnaie de Paris').comptes
+    .some((c) => c.telephone === '06 12 34 56 78' && c.ville === 'Besançon'
+              && c.modePaiement === 'Carte Boursorama'), 'coordonnees absentes de l\'export');
 verifie('L\'export porte un avertissement en clair',
   /mots de passe en clair/i.test(contenu.avertissement || ''), contenu.avertissement);
 const dernierToast = sandbox.toasts[sandbox.toasts.length - 1];
