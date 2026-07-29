@@ -1034,6 +1034,19 @@ body.login-page {
     border-top: none;
 }
 
+/* Modale a trois colonnes, pour les formulaires qui debordaient en deux.
+   Elargir sans repasser en trois colonnes ne servirait a rien : ce sont
+   les RANGEES qui font la hauteur, pas la largeur des champs. */
+.modal--large { max-width: 760px; }
+.modal-form--3 { grid-template-columns: repeat(3, 1fr); }
+.field--2 { grid-column: span 2; }
+
+/* Sous 800 px la modale n'a plus sa largeur pleine : trois colonnes y
+   deviendraient trois champs illisibles. */
+@media (max-width: 800px) {
+    .modal-form--3 { grid-template-columns: 1fr 1fr; }
+}
+
 /* ---------- 13. Mobile : le tableau devient des fiches ---------- */
 @media (max-width: 760px) {
     .data-table {
@@ -1081,6 +1094,9 @@ body.login-page {
 
 @media (max-width: 600px) {
     .modal-form { grid-template-columns: 1fr; }
+    /* Sans ce retour a la normale, « span 2 » dans une grille a une seule
+       colonne en fabriquerait une deuxieme, implicite et hors ecran. */
+    .field--2 { grid-column: auto; }
     .modal { padding: var(--spacing-lg); }
     .page-header { flex-direction: column; align-items: stretch; }
     .stats { grid-template-columns: repeat(auto-fit, minmax(135px, 1fr)); }

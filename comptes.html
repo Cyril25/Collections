@@ -96,37 +96,46 @@
 
     <!-- Modale compte -->
     <div id="modal-compte" class="modal-overlay" style="display:none">
-        <div class="modal" role="dialog" aria-modal="true" aria-labelledby="titre-compte">
+        <div class="modal modal--large" role="dialog" aria-modal="true" aria-labelledby="titre-compte">
             <h2 class="modal-title" id="titre-compte">Nouveau compte</h2>
             <p class="modal-desc" id="fc-fournisseur"></p>
-            <div class="modal-form">
+            <!-- Trois colonnes, pas deux : à douze champs, une grille à
+                 deux colonnes fabrique neuf rangées et une barre de
+                 défilement. Les champs vont par rangées cohérentes —
+                 « qui et comment », puis l'adresse. -->
+            <div class="modal-form modal-form--3">
                 <p class="modal-section">Identifiants</p>
-                <div class="field field--full">
+                <div class="field field--2">
                     <label for="fc-libelle">Libellé</label>
                     <input type="text" id="fc-libelle" maxlength="80" autocomplete="off"
                            placeholder="Ex : compte principal, compte pro, ancien compte">
                 </div>
+                <div class="field">
+                    <label>Compte par défaut</label>
+                    <label class="checkbox-inline">
+                        <input type="checkbox" id="fc-principal"> Principal
+                    </label>
+                </div>
+
                 <div class="field">
                     <label for="fc-email">Email *</label>
                     <input type="email" id="fc-email" autocomplete="off" placeholder="cyril.samson@free.fr">
                 </div>
                 <div class="field">
                     <label for="fc-identifiant">Identifiant</label>
-                    <input type="text" id="fc-identifiant" autocomplete="off" placeholder="Si le login n'est pas l'email">
+                    <input type="text" id="fc-identifiant" autocomplete="off" placeholder="Si ce n'est pas l'email">
                 </div>
                 <div class="field">
                     <label for="fc-mdp">Mot de passe</label>
                     <input type="password" id="fc-mdp" autocomplete="new-password" spellcheck="false">
-                    <span class="field-hint">Stocké en clair — voir le bandeau de la page.</span>
-                </div>
-                <div class="field">
-                    <label>Compte par défaut</label>
-                    <label class="checkbox-inline">
-                        <input type="checkbox" id="fc-principal"> Compte principal
-                    </label>
+                    <span class="field-hint">Stocké en clair — voir le bandeau.</span>
                 </div>
 
-                <p class="modal-section">Coordonnées et livraison</p>
+                <p class="modal-section">Livraison et paiement</p>
+                <div class="field">
+                    <label for="fc-destinataire">Destinataire</label>
+                    <input type="text" id="fc-destinataire" autocomplete="off" placeholder="Prénom Nom">
+                </div>
                 <div class="field">
                     <label for="fc-telephone">Téléphone</label>
                     <input type="tel" id="fc-telephone" autocomplete="off" placeholder="06 12 34 56 78">
@@ -134,15 +143,12 @@
                 <div class="field">
                     <label for="fc-paiement">Moyen de paiement</label>
                     <input type="text" id="fc-paiement" list="paiement-list" autocomplete="off"
-                           placeholder="Ex : carte Boursorama, carte BNP…">
+                           placeholder="Ex : carte Boursorama">
                     <datalist id="paiement-list"></datalist>
-                    <span class="field-hint">Le moyen enregistré chez ce fournisseur — pas un numéro de carte.</span>
+                    <span class="field-hint">Pas un numéro de carte.</span>
                 </div>
-                <div class="field field--full">
-                    <label for="fc-destinataire">Destinataire</label>
-                    <input type="text" id="fc-destinataire" autocomplete="off" placeholder="Prénom Nom">
-                </div>
-                <div class="field field--full">
+
+                <div class="field">
                     <label for="fc-rue">Rue</label>
                     <input type="text" id="fc-rue" autocomplete="off" placeholder="12 rue des Lilas">
                 </div>
