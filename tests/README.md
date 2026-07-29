@@ -11,8 +11,28 @@ d'étape de build.
 | Fichier | Ce qu'il protège |
 |---|---|
 | `test-achats.js` | Le suivi des achats : montants, statuts, retard, doublons, dates, échappement, export |
+| `test-comptes.js` | Fournisseurs et comptes : assainissement des URL, non-fuite des mots de passe, révélation, copie, recherche, export |
 
-### Où porte l'effort
+### `test-comptes.js` — deux choses le justifient à elles seules
+
+**Le champ Site devient un `href`.** Un `javascript:…` collé dedans serait un lien
+exécutable au clic, sur une page qui a les mots de passe en mémoire. `urlSure()` est la
+seule chose entre les deux, et elle est testée sur `javascript:`, `JaVaScRiPt:`,
+`data:` et `vbscript:`, plus les saisies normales (`mtm.mc` doit recevoir un `https://`,
+sinon le lien part en relatif vers une page du site).
+
+**Le mot de passe ne doit jamais entrer dans le HTML généré.** Le rendu ne pose que des
+points ; la valeur arrive par `textContent` au clic sur l'œil. Si une modification
+future le remettait dans `innerHTML`, il apparaîtrait dans le code source de la page,
+dans les captures d'écran et dans le DOM inspecté — **sans que rien n'échoue**. Le test
+vérifie l'absence de la chaîne dans `innerHTML`, y compris après un rafraîchissement
+Firestore alors qu'il est révélé.
+
+Le reste couvre l'unicité du compte principal, la suppression en cascade, et le fait
+que la recherche ne porte pas sur les mots de passe — sinon on pourrait en confirmer un
+par tâtonnement sans jamais l'afficher.
+
+### `test-achats.js` — où porte l'effort
 
 **La détection des doublons.** C'est la seule chose du site qu'on ne peut pas vérifier en
 regardant l'écran : elle regroupe sur une forme normalisée du nom (sans accents, sans

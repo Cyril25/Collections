@@ -46,6 +46,7 @@ précisément le cas qu'on cherche à rattraper.
 | `prixUnitaire` | number | € par exemplaire |
 | `fraisPort` | number | € pour la ligne entière |
 | `vendeur` | string | eBay, Delcampe, brocante… |
+| `compteEmail` | string | Adresse du compte depuis lequel la commande a été passée |
 | `paye` | bool | Réglé ou non. **Absent = dû** (voir plus bas) |
 | `modePaiement` | string | Texte libre : PayPal, carte BNP, espèces… suggestions issues des saisies |
 | `suivi` | string | N° de suivi |
@@ -98,6 +99,19 @@ tableau a déjà huit colonnes.
 > sans ouvrir la modale — le mode de paiement, lui, se saisit dans la modale et reste
 > facultatif.
 
+### Depuis quel compte — une adresse, pas une référence
+
+`compteEmail` stocke **l'adresse en toutes lettres**, pas l'identifiant d'un document
+de la collection `fournisseurs`. Une référence serait plus « propre » mais fragile :
+supprimer un compte laisserait les achats pointer dans le vide. Une adresse reste
+lisible et cherchable même après la disparition du compte, et c'est la même
+convention que `collection`, `vendeur` ou `modePaiement`.
+
+Les suggestions du champ viennent des **achats déjà saisis**, pas de la collection
+`fournisseurs`. C'est délibéré : cette page-là porte des mots de passe, elle n'a rien
+à faire en mémoire sur la page Achats. Le prix à payer est de taper l'adresse une
+première fois — la page Comptes a un bouton *copier* pour ça.
+
 ### Retard : 30 jours
 
 Une ligne `commande` ou `expedie` dont la date de commande remonte à plus de
@@ -122,6 +136,66 @@ Il faudrait connaître le total d'une collection, ce qui est faux par nature. La
 montre des faits — dépensé, attendu, en retard, en double — pas une complétude
 inventée.
 
+## Modèle de données — collection `fournisseurs`
+
+**Un seul tiroir pour deux choses**, discriminées par un champ `type` — même parti
+pris que le projet Extérieur du hub :
+
+| `type` | Champs |
+|---|---|
+| `fournisseur` | `nom` (obligatoire), `cle` (nom normalisé), `site`, `notes` |
+| `compte` | `fournisseurId`, `libelle`, `email` (obligatoire), `identifiant`, `motDePasse`, `principal`, `notes` |
+
+Pourquoi pas une sous-collection `fournisseurs/{id}/comptes` : il faudrait un écouteur
+par fournisseur, ou une requête `collectionGroup` avec son index — pour une poignée de
+documents. Ici un seul `onSnapshot` alimente la page, et chercher « free.fr » retrouve
+d'un coup le fournisseur chez qui cette adresse est utilisée.
+
+`principal` est **unique par fournisseur** : cocher un compte décoche l'ancien dans le
+même lot d'écriture, sinon deux comptes se disent principaux et l'étoile ne veut plus
+rien dire. Le premier compte créé chez un fournisseur est principal par défaut.
+
+Supprimer un fournisseur supprime **ses comptes avec lui**, dans un `batch`. Sans ça
+ils resteraient orphelins : invisibles à l'écran, bien présents en base, mots de passe
+inclus.
+
+### Mots de passe : le risque assumé
+
+Ils sont stockés **en clair**. Ce n'est pas un oubli, c'est un choix — voici ce qu'il
+coûte, pour pouvoir le refaire en connaissance de cause :
+
+- **Le compte Google devient la clé de tous les comptes fournisseurs.** Qui entre dans
+  la session Google les lit tous depuis la console Firebase, sans passer par ce site.
+  C'est le risque dominant, et il justifie à lui seul d'avoir la double
+  authentification activée sur ce compte.
+- **La CSP contient `'unsafe-inline'`** — inévitable, tout le hub fonctionne avec des
+  `onclick`. Le code échappe soigneusement, mais en cas de XSS la CSP ne serait pas un
+  second rempart.
+- **L'export JSON les écrit en clair** dans le dossier Téléchargements, hors de toute
+  règle Firestore. Le toast le rappelle au moment du clic.
+- Google les stocke lisibles au niveau applicatif.
+
+**Ce qu'on n'y met pas** : rien qui déplace de l'argent directement (banque, PayPal,
+carte) ni un mot de passe réutilisé ailleurs. Un bandeau le rappelle en haut de la page.
+
+Ce que le code fait quand même, et qui n'est pas rien :
+
+| Mesure | Ce que ça protège |
+|---|---|
+| Le mot de passe n'est **jamais dans le HTML généré** — que des points ; la valeur arrive par `textContent` au clic | Le code source de la page, les captures d'écran, le DOM inspecté |
+| Bouton **copier** à côté de l'œil | L'usage courant (coller dans le formulaire) sans rien afficher |
+| **Re-masquage automatique** après 30 s | Le mot de passe révélé puis oublié à l'écran |
+| Le mot de passe n'entre **pas dans la recherche** | Le confirmer par tâtonnement sans jamais l'afficher |
+| `urlSure()` sur le champ Site | Un `javascript:` collé dans le champ deviendrait un lien exécutable sur une page qui a les mots de passe en mémoire |
+
+> **L'œil est une protection contre le regard par-dessus l'épaule, pas une mesure de
+> sécurité.** La valeur est en mémoire du navigateur dès le chargement de la page,
+> masquée ou non.
+
+Un chiffrement côté client (passphrase + Web Crypto) retirerait le risque principal,
+au prix d'une phrase à retenir et d'une perte définitive en cas d'oubli. Mauvais
+compromis ici : ce site existe justement parce qu'on oublie des choses.
+
 ## Architecture
 
 Même stack que le [hub admin](https://github.com/Cyril25/Admin) : statique, sans
@@ -135,7 +209,8 @@ un seul jeu de règles.
 | `auth.js` | Le vigile — copie de celui du hub |
 | `hub-utils.js` | `toDate`, `formatDateFr`, `escapeAttr`, `jsAttr` — copie du hub |
 | `login.html` | Page de connexion Google |
-| `index.html` / `achats.js` | Le suivi des achats — l'unique page pour l'instant |
+| `index.html` / `achats.js` | Le suivi des achats — la page d'accueil |
+| `comptes.html` / `comptes.js` | Fournisseurs et comptes (identifiants) |
 | `style.css` | Feuille de styles |
 | `tests/` | Tests hors navigateur — `node tests/run-tests.js` |
 | `CNAME` | Domaine custom GitHub Pages |
@@ -152,14 +227,23 @@ Ne pas reporter bêtement une correction du hub sur ce fichier sans regarder.
 
 ### ⚠ Règle Firestore à publier — sinon la page reste vide
 
-Les règles vivent dans le dépôt du hub. Le bloc de cette collection y est déjà
-écrit :
+Les règles vivent dans le dépôt du hub. Les blocs de ce site y sont déjà écrits — **il
+y en a deux** :
 
 ```
 match /achats/{document} {
   allow read, write: if aAcces('achats');
 }
+
+match /fournisseurs/{document} {
+  allow read, write: if aAcces('fournisseurs');
+}
 ```
+
+Le second protège des mots de passe en clair : c'est la seule barrière entre eux et le
+reste d'Internet. Ne jamais l'élargir « pour dépanner », et garder en tête qu'accorder
+le projet `fournisseurs` à quelqu'un lui donne **tous** les identifiants — il n'y a pas
+de demi-accès.
 
 **Il faut encore le publier** : console Firebase → Firestore Database → onglet
 *Règles* → coller `firestore.rules` du dépôt Admin → *Publier*. Les règles ne se

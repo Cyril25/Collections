@@ -383,7 +383,8 @@ function getAchatsFiltres(terme) {
         if (!terme) return true;
         var texte = ((achat.article || '') + ' ' + (achat.collection || '') + ' '
                    + (achat.vendeur || '') + ' ' + (achat.notes || '') + ' '
-                   + (achat.suivi || '') + ' ' + (achat.modePaiement || '')).toLowerCase();
+                   + (achat.suivi || '') + ' ' + (achat.modePaiement || '') + ' '
+                   + (achat.compteEmail || '')).toLowerCase();
         return texte.indexOf(terme) !== -1;
     });
 }
@@ -573,7 +574,10 @@ function renderLigne(achat, presentes) {
         + '<td class="cell-montant" title="' + escapeAttr(detailMontant) + '">'
         +   escapeHtml(formatEuro(totalLigne(achat))) + sousMontant
         + '</td>'
-        + '<td class="cell-vendeur">' + escapeHtml(achat.vendeur || '') + '</td>'
+        + '<td class="cell-vendeur" title="' + escapeAttr(infoCompte(achat)) + '">'
+        +   escapeHtml(achat.vendeur || '')
+        +   (achat.compteEmail ? '<span class="cell-sous">' + escapeHtml(achat.compteEmail) + '</span>' : '')
+        + '</td>'
         + '<td class="cell-date" title="' + escapeAttr(infoDate) + '">'
         +   escapeHtml(formatDateFr(achat.dateCommande)) + suffixeDate
         + '</td>'
@@ -583,6 +587,14 @@ function renderLigne(achat, presentes) {
         +   '<i class="fa-solid fa-pen"></i></button>'
         + '</td>'
         + '</tr>';
+}
+
+// L'email tient rarement dans la colonne : le survol donne la version
+// complete, la cellule se contente de ce qui rentre.
+function infoCompte(achat) {
+    var texte = achat.vendeur || 'Vendeur non renseigné';
+    if (achat.compteEmail) texte += ' — commandé depuis ' + achat.compteEmail;
+    return texte;
 }
 
 // Bascule payé / non payé en un clic depuis le tableau. Sans ça, régler
@@ -714,6 +726,12 @@ function remplirSuggestions() {
     remplirDatalist('collection-list', 'collection');
     remplirDatalist('vendeur-list', 'vendeur');
     remplirDatalist('paiement-list', 'modePaiement');
+    // Les emails de commande se suggerent depuis les achats deja saisis,
+    // PAS depuis la collection « fournisseurs ». Cette page-la porte des
+    // mots de passe : elle n'a rien a faire en memoire ici. Prix a payer :
+    // il faut taper l'adresse une premiere fois. La page Comptes a un
+    // bouton « copier » pour ca.
+    remplirDatalist('compte-list', 'compteEmail');
 }
 
 function remplirDatalist(idDatalist, champ) {
@@ -747,6 +765,7 @@ function ouvrirModale(id) {
     document.getElementById('f-revendre').checked   = achat ? !!achat.aRevendre : false;
     document.getElementById('f-paiement').value     = achat ? (achat.modePaiement || '') : '';
     document.getElementById('f-paye').checked       = achat ? !!achat.paye : false;
+    document.getElementById('f-compte').value       = achat ? (achat.compteEmail || '') : '';
     // Un achat se saisit le jour où il est passé, neuf fois sur dix.
     document.getElementById('f-date-commande').value  = achat ? inputDepuisDate(achat.dateCommande) : aujourdhuiInput();
     document.getElementById('f-date-reception').value = achat ? inputDepuisDate(achat.dateReception) : '';
@@ -829,6 +848,7 @@ function sauverAchat() {
         aRevendre:    document.getElementById('f-revendre').checked,
         modePaiement: document.getElementById('f-paiement').value.trim(),
         paye:         document.getElementById('f-paye').checked,
+        compteEmail:  document.getElementById('f-compte').value.trim(),
         dateCommande:  dateDepuisInput(document.getElementById('f-date-commande').value),
         dateReception: dateReception,
         updatedAt:    firebase.firestore.FieldValue.serverTimestamp()
@@ -946,6 +966,7 @@ function exporterJson() {
                 aRevendre:     !!achat.aRevendre,
                 paye:          !!achat.paye,
                 modePaiement:  achat.modePaiement || '',
+                compteEmail:   achat.compteEmail || '',
                 // Horodatages en ISO : un Timestamp Firestore brut ne
                 // survit pas a JSON.stringify de facon lisible.
                 dateCommande:  iso(achat.dateCommande),

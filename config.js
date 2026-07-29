@@ -28,9 +28,9 @@ var SITE_TITLE = 'Collections';
 var SITE_ICON  = 'fa-solid fa-boxes-stacked';
 
 // --- 4. Navigation -------------------------------------------
-// Une seule page pour l'instant : le suivi des achats EST l'accueil.
-// Quand l'inventaire arrivera, il prendra sa place ici et l'accueil
-// redeviendra une page a part entiere.
+// Le suivi des achats EST l'accueil. Quand l'inventaire arrivera, il
+// prendra sa place ici et l'accueil redeviendra une page a part entiere.
 var NAV_LINKS = [
-    { href: 'index.html', icon: 'fa-solid fa-cart-shopping', label: 'Achats' }
+    { href: 'index.html',  icon: 'fa-solid fa-cart-shopping', label: 'Achats' },
+    { href: 'comptes.html', icon: 'fa-solid fa-key',          label: 'Comptes' }
 ];

@@ -93,6 +93,17 @@
                     <datalist id="vendeur-list"></datalist>
                 </div>
 
+                <div class="field field--full">
+                    <label for="f-compte">Commandé depuis le compte</label>
+                    <input type="email" id="f-compte" list="compte-list" autocomplete="off"
+                           placeholder="L'adresse email utilisée pour passer la commande">
+                    <datalist id="compte-list"></datalist>
+                    <span class="field-hint">
+                        Les identifiants des fournisseurs se gèrent sur la page
+                        <a href="comptes.html">Comptes</a>, d'où l'adresse se copie en un clic.
+                    </span>
+                </div>
+
                 <div class="field">
                     <label for="f-prix">Prix unitaire (€)</label>
                     <input type="text" id="f-prix" inputmode="decimal" autocomplete="off" placeholder="12,50">
