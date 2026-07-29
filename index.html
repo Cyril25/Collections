@@ -103,6 +103,20 @@
                 </div>
 
                 <div class="field">
+                    <label for="f-paiement">Mode de paiement</label>
+                    <input type="text" id="f-paiement" list="paiement-list" autocomplete="off"
+                           placeholder="Ex : PayPal, carte BNP, espèces…">
+                    <datalist id="paiement-list"></datalist>
+                </div>
+                <div class="field">
+                    <label>Règlement</label>
+                    <label class="checkbox-inline">
+                        <input type="checkbox" id="f-paye"> Payé
+                    </label>
+                    <span class="field-hint">Se coche aussi en un clic depuis le tableau.</span>
+                </div>
+
+                <div class="field">
                     <label for="f-date-commande">Commandé le</label>
                     <input type="date" id="f-date-commande">
                 </div>

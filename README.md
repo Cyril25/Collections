@@ -16,6 +16,7 @@ quatre questions de départ sans avoir à construire d'inventaire :
 | Qu'est-ce que j'ai commandé ? | les lignes |
 | Qu'est-ce que j'attends ? | les lignes non reçues |
 | Combien j'ai acheté ? | la somme des lignes |
+| Qu'est-ce que je dois encore ? | les lignes non réglées |
 | Qu'est-ce que j'ai en double ? | les lignes **reçues**, regroupées par article |
 
 **Les doublons sont déduits, jamais saisis.** Deux lignes reçues portant le même
@@ -45,6 +46,8 @@ précisément le cas qu'on cherche à rattraper.
 | `prixUnitaire` | number | € par exemplaire |
 | `fraisPort` | number | € pour la ligne entière |
 | `vendeur` | string | eBay, Delcampe, brocante… |
+| `paye` | bool | Réglé ou non. **Absent = dû** (voir plus bas) |
+| `modePaiement` | string | Texte libre : PayPal, carte BNP, espèces… suggestions issues des saisies |
 | `suivi` | string | N° de suivi |
 | `notes` | string | Texte libre |
 | `aRevendre` | bool | Marquage **manuel**, indépendant des doublons détectés |
@@ -69,6 +72,31 @@ doubler d'une alerte « à relancer ».
 `annule` sort de tous les montants mais reste dans l'historique. D'où le texte de la
 modale de suppression : pour une commande qui n'a pas abouti, passer en `annule`
 plutôt que supprimer.
+
+### Payé ou non — indépendant du statut
+
+Recevoir et payer sont deux axes séparés, et les quatre combinaisons existent
+vraiment : payé d'avance et jamais arrivé, arrivé et pas encore réglé, etc. D'où un
+champ à part plutôt qu'un statut `paye` de plus, qui aurait forcé à choisir entre
+« où en est le colis » et « où en est l'argent ».
+
+Une commande `annule` n'est jamais due, quoi qu'il arrive. Tout le reste l'est tant
+que la case n'est pas cochée — **y compris ce qui n'est pas encore arrivé** : sur
+eBay ou Delcampe on paie à la commande, attendre ne dispense pas de régler.
+
+Le mode de paiement est du **texte libre** : les suggestions se remplissent toutes
+seules à partir des saisies précédentes, comme pour les collections et les vendeurs.
+Rien à maintenir en dur, et la liste colle au vrai usage dès le troisième achat.
+
+À l'écran, le paiement se lit **sous le montant** — « à payer » en ambre, ou le mode
+de règlement — plutôt que dans une colonne à lui : c'est la même information et le
+tableau a déjà huit colonnes.
+
+> **⚠ Les lignes saisies avant l'arrivée de ce champ n'ont pas de `paye` du tout, et
+> comptent donc comme dues.** C'est délibéré : un arriéré ne doit pas se cacher
+> derrière un champ absent. Le bouton **€** de chaque ligne les règle en un clic,
+> sans ouvrir la modale — le mode de paiement, lui, se saisit dans la modale et reste
+> facultatif.
 
 ### Retard : 30 jours
 

@@ -25,6 +25,11 @@ Ensuite viennent les calculs qu'un coup d'œil ne rattrape pas :
 
 - **Les montants.** `annule` sort des totaux, `probleme` y reste. Une erreur de signe ou
   de statut donne un « Dépensé » plausible mais faux.
+- **Le champ `paye` absent.** Les lignes saisies avant l'arrivée du suivi de paiement
+  n'ont pas le champ du tout. Elles doivent compter comme dues : si `undefined` était
+  traité comme « réglé », un arriéré disparaîtrait derrière un champ manquant, et le
+  total afficherait 0 € à payer sans que rien n'échoue. Un cas de test porte
+  explicitement une ligne sans `paye`.
 - **`nombre()`.** Un francophone tape `12,50`. Un `<input type="number">` rejette cette
   saisie en silence (`value` devient `''`), ce qui enregistrerait `0` sans prévenir : d'où
   le champ texte et son parser, testé sur virgule, point, espaces et texte libre.

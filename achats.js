@@ -141,6 +141,13 @@ function estAttendu(achat) {
     return STATUTS_ATTENDUS.indexOf(achat.statut) !== -1;
 }
 
+// Une commande annulée ne se doit plus. Le reste est dû tant que la case
+// n'est pas cochée — y compris ce qui n'est pas encore arrivé : sur eBay
+// ou Delcampe on paie à la commande, l'attente ne dispense pas de régler.
+function estAPayer(achat) {
+    return achat.statut !== 'annule' && !achat.paye;
+}
+
 // Le retard ne s'applique pas à « probleme » : le litige est déjà signalé,
 // inutile de le doubler d'une alerte de relance.
 function estEnRetard(achat) {
@@ -227,14 +234,18 @@ function renderStats() {
     var cible = document.getElementById('stats');
     if (!cible) return;
 
-    var depense = 0, engage = 0, valeurRecue = 0;
-    var nbAttendus = 0, nbRetard = 0, nbLignes = 0, nbExemplaires = 0;
+    var depense = 0, engage = 0, valeurRecue = 0, aPayer = 0;
+    var nbAttendus = 0, nbRetard = 0, nbLignes = 0, nbExemplaires = 0, nbAPayer = 0;
 
     achats.forEach(function(achat) {
         if (achat.statut === 'annule') return;
         var total = totalLigne(achat);
         depense += total;
         nbLignes++;
+        if (!achat.paye) {
+            aPayer += total;
+            nbAPayer++;
+        }
         if (estAttendu(achat)) {
             engage += total;
             nbAttendus++;
@@ -255,6 +266,9 @@ function renderStats() {
 
     cible.innerHTML =
         tuile('Dépensé', formatEuro(depense), nbLignes + ' ligne' + (nbLignes > 1 ? 's' : '') + ' — annulées exclues', '') +
+        tuile('À payer', formatEuro(aPayer),
+            nbAPayer ? nbAPayer + ' ligne' + (nbAPayer > 1 ? 's' : '') + ' non réglée' + (nbAPayer > 1 ? 's' : '') : 'tout est réglé',
+            nbAPayer ? 'stat--impaye' : 'stat--ok') +
         tuile('En attente', String(nbAttendus), formatEuro(engage) + ' engagés', nbAttendus ? 'stat--attente' : '') +
         tuile('En retard', String(nbRetard), 'commandé il y a plus de ' + SEUIL_RETARD_JOURS + ' j', nbRetard ? 'stat--alerte' : '') +
         tuile('Reçu', String(nbExemplaires), formatEuro(valeurRecue) + ' — ' + nbExemplaires + ' exemplaire' + (nbExemplaires > 1 ? 's' : ''), 'stat--ok') +
@@ -274,18 +288,20 @@ function tuile(libelle, valeur, detail, modificateur) {
 // ------------------------------------------------------------
 function renderFiltres() {
     var comptes = {};
-    var nbAttendus = 0, nbRetard = 0, nbRevendre = 0;
+    var nbAttendus = 0, nbRetard = 0, nbRevendre = 0, nbAPayer = 0;
     achats.forEach(function(achat) {
         comptes[achat.statut] = (comptes[achat.statut] || 0) + 1;
         if (estAttendu(achat)) nbAttendus++;
         if (estEnRetard(achat)) nbRetard++;
         if (achat.aRevendre) nbRevendre++;
+        if (estAPayer(achat)) nbAPayer++;
     });
 
     var wrapStatut = document.getElementById('statut-filter');
     if (wrapStatut) {
         var html = boutonFiltre('statut', 'attendus', 'À recevoir', nbAttendus);
         html += boutonFiltre('statut', 'retard', 'En retard', nbRetard);
+        html += boutonFiltre('statut', 'apayer', 'À payer', nbAPayer);
         STATUTS.forEach(function(s) {
             html += boutonFiltre('statut', s.value, s.label, comptes[s.value] || 0);
         });
@@ -356,6 +372,8 @@ function getAchatsFiltres(terme) {
             if (!estEnRetard(achat)) return false;
         } else if (filtreStatut === 'revendre') {
             if (!achat.aRevendre) return false;
+        } else if (filtreStatut === 'apayer') {
+            if (!estAPayer(achat)) return false;
         } else if (filtreStatut !== 'tous') {
             if (achat.statut !== filtreStatut) return false;
         }
@@ -365,7 +383,7 @@ function getAchatsFiltres(terme) {
         if (!terme) return true;
         var texte = ((achat.article || '') + ' ' + (achat.collection || '') + ' '
                    + (achat.vendeur || '') + ' ' + (achat.notes || '') + ' '
-                   + (achat.suivi || '')).toLowerCase();
+                   + (achat.suivi || '') + ' ' + (achat.modePaiement || '')).toLowerCase();
         return texte.indexOf(terme) !== -1;
     });
 }
@@ -513,15 +531,30 @@ function renderLigne(achat, presentes) {
     var detailMontant = quantite + ' × ' + formatEuro(prixUnitaire)
         + (port ? ' + ' + formatEuro(port) + ' de port' : ' — sans frais de port');
 
+    // Le paiement se lit sous le montant plutôt que dans une colonne à
+    // lui : c'est la même information, et le tableau a déjà huit colonnes.
+    var sousMontant = '';
+    if (achat.statut !== 'annule') {
+        if (estAPayer(achat)) {
+            sousMontant = '<span class="cell-sous cell-sous--impaye">à payer</span>';
+            detailMontant += ' — pas encore réglé';
+        } else if (achat.modePaiement) {
+            sousMontant = '<span class="cell-sous">' + escapeHtml(achat.modePaiement) + '</span>';
+            detailMontant += ' — réglé par ' + achat.modePaiement;
+        } else {
+            detailMontant += ' — réglé';
+        }
+    }
+
     // --- Cellule date ---
     var infoDate = 'Commandé le ' + formatDateFr(achat.dateCommande);
     var suffixeDate = '';
     if (achat.statut === 'recu' && achat.dateReception) {
         infoDate += ' — reçu le ' + formatDateFr(achat.dateReception);
-        suffixeDate = '<span class="cell-note">reçu le ' + escapeHtml(formatDateFr(achat.dateReception)) + '</span>';
+        suffixeDate = '<span class="cell-sous">reçu le ' + escapeHtml(formatDateFr(achat.dateReception)) + '</span>';
     } else if (estAttendu(achat)) {
         var age = joursDepuis(achat.dateCommande);
-        if (age !== null) suffixeDate = '<span class="cell-note">il y a ' + age + ' j</span>';
+        if (age !== null) suffixeDate = '<span class="cell-sous">il y a ' + age + ' j</span>';
     }
 
     return '<tr class="' + (terne ? 'ligne--terne' : '') + '" onclick="ouvrirModale(\'' + idAttr + '\')">'
@@ -537,16 +570,34 @@ function renderLigne(achat, presentes) {
         + '</td>'
         + '<td>' + (achat.collection ? '<span class="badge badge-collection"><i class="fa-solid fa-layer-group"></i>' + escapeHtml(achat.collection) + '</span>' : '') + '</td>'
         + '<td class="cell-num">' + quantite + '</td>'
-        + '<td class="cell-montant" title="' + escapeAttr(detailMontant) + '">' + escapeHtml(formatEuro(totalLigne(achat))) + '</td>'
+        + '<td class="cell-montant" title="' + escapeAttr(detailMontant) + '">'
+        +   escapeHtml(formatEuro(totalLigne(achat))) + sousMontant
+        + '</td>'
         + '<td class="cell-vendeur">' + escapeHtml(achat.vendeur || '') + '</td>'
         + '<td class="cell-date" title="' + escapeAttr(infoDate) + '">'
         +   escapeHtml(formatDateFr(achat.dateCommande)) + suffixeDate
         + '</td>'
         + '<td class="row-actions-cell">'
+        +   boutonPaiement(achat, idAttr)
         +   '<button type="button" class="icon-btn" title="Modifier" onclick="event.stopPropagation();ouvrirModale(\'' + idAttr + '\')">'
         +   '<i class="fa-solid fa-pen"></i></button>'
         + '</td>'
         + '</tr>';
+}
+
+// Bascule payé / non payé en un clic depuis le tableau. Sans ça, régler
+// une ligne demanderait d'ouvrir la modale, et les achats déjà saisis
+// avant l'arrivée du champ resteraient marqués « à payer » par lassitude.
+function boutonPaiement(achat, idAttr) {
+    if (achat.statut === 'annule') return '';
+    var paye = !!achat.paye;
+    var titre = paye
+        ? 'Réglé' + (achat.modePaiement ? ' par ' + achat.modePaiement : '') + ' — cliquer pour annuler'
+        : 'Marquer comme payé';
+    return '<button type="button" class="icon-btn' + (paye ? ' icon-btn--paye' : '') + '" '
+        + 'title="' + escapeAttr(titre) + '" '
+        + 'onclick="event.stopPropagation();basculerPaiement(\'' + idAttr + '\')">'
+        + '<i class="fa-solid fa-' + (paye ? 'check' : 'euro-sign') + '"></i></button>';
 }
 
 // Vue agrégée : ici une ligne = un ARTICLE possédé en plusieurs
@@ -662,6 +713,7 @@ function trouverAchat(id) {
 function remplirSuggestions() {
     remplirDatalist('collection-list', 'collection');
     remplirDatalist('vendeur-list', 'vendeur');
+    remplirDatalist('paiement-list', 'modePaiement');
 }
 
 function remplirDatalist(idDatalist, champ) {
@@ -693,6 +745,8 @@ function ouvrirModale(id) {
     document.getElementById('f-suivi').value        = achat ? (achat.suivi || '') : '';
     document.getElementById('f-notes').value        = achat ? (achat.notes || '') : '';
     document.getElementById('f-revendre').checked   = achat ? !!achat.aRevendre : false;
+    document.getElementById('f-paiement').value     = achat ? (achat.modePaiement || '') : '';
+    document.getElementById('f-paye').checked       = achat ? !!achat.paye : false;
     // Un achat se saisit le jour où il est passé, neuf fois sur dix.
     document.getElementById('f-date-commande').value  = achat ? inputDepuisDate(achat.dateCommande) : aujourdhuiInput();
     document.getElementById('f-date-reception').value = achat ? inputDepuisDate(achat.dateReception) : '';
@@ -773,6 +827,8 @@ function sauverAchat() {
         suivi:        document.getElementById('f-suivi').value.trim(),
         notes:        document.getElementById('f-notes').value.trim(),
         aRevendre:    document.getElementById('f-revendre').checked,
+        modePaiement: document.getElementById('f-paiement').value.trim(),
+        paye:         document.getElementById('f-paye').checked,
         dateCommande:  dateDepuisInput(document.getElementById('f-date-commande').value),
         dateReception: dateReception,
         updatedAt:    firebase.firestore.FieldValue.serverTimestamp()
@@ -811,6 +867,18 @@ function changerStatut(id, nouveauStatut) {
     db.collection('achats').doc(id).update(donnees).catch(function(erreur) {
         console.error(erreur);
         showToast('Changement de statut impossible : ' + erreur.message, 'error');
+    });
+}
+
+function basculerPaiement(id) {
+    var achat = trouverAchat(id);
+    if (!achat) return;
+    db.collection('achats').doc(id).update({
+        paye: !achat.paye,
+        updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+    }).catch(function(erreur) {
+        console.error(erreur);
+        showToast('Changement de paiement impossible : ' + erreur.message, 'error');
     });
 }
 
@@ -876,6 +944,8 @@ function exporterJson() {
                 suivi:         achat.suivi || '',
                 notes:         achat.notes || '',
                 aRevendre:     !!achat.aRevendre,
+                paye:          !!achat.paye,
+                modePaiement:  achat.modePaiement || '',
                 // Horodatages en ISO : un Timestamp Firestore brut ne
                 // survit pas a JSON.stringify de facon lisible.
                 dateCommande:  iso(achat.dateCommande),

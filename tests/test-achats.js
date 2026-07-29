@@ -90,30 +90,31 @@ sandbox.achats = [
   // Deux receptions du meme article, ecrites differemment : un doublon.
   { id: 'a1', article: "Tintin - Objectif Lune", collection: 'BD', statut: 'recu',
     quantite: 1, prixUnitaire: 20, fraisPort: 5, vendeur: 'eBay',
-    dateCommande: ilYA(90), dateReception: ilYA(80) },
+    dateCommande: ilYA(90), dateReception: ilYA(80), paye: true, modePaiement: 'PayPal' },
   { id: 'a2', article: "tintin  objectif lune", collection: 'BD', statut: 'recu',
     quantite: 1, prixUnitaire: 30, fraisPort: 0, vendeur: 'Brocante',
-    dateCommande: ilYA(60), dateReception: ilYA(58) },
-  // Article unique recu.
+    dateCommande: ilYA(60), dateReception: ilYA(58), paye: true, modePaiement: 'Espèces' },
+  // Article unique recu. Champ « paye » ABSENT : c'est une ligne saisie
+  // avant l'arrivee du suivi de paiement, elle doit compter comme due.
   { id: 'a3', article: 'Fève Roi Soleil', collection: 'Fèves', statut: 'recu',
     quantite: 1, prixUnitaire: 3, fraisPort: 0, vendeur: 'Delcampe',
     dateCommande: ilYA(40), dateReception: ilYA(35) },
-  // Attendu depuis longtemps : en retard.
+  // Attendu depuis longtemps : en retard. Paye a la commande, comme sur eBay.
   { id: 'a4', article: "L'Étoile mystérieuse", collection: 'BD', statut: 'commande',
     quantite: 1, prixUnitaire: 15, fraisPort: 4, vendeur: 'eBay',
-    dateCommande: ilYA(45) },
-  // Attendu, recent : pas en retard. Et c'est un futur doublon.
+    dateCommande: ilYA(45), paye: true, modePaiement: 'Carte BNP' },
+  // Attendu, recent : pas en retard. Futur doublon, et pas encore regle.
   { id: 'a5', article: 'Tintin, Objectif Lune !', collection: 'BD', statut: 'expedie',
     quantite: 1, prixUnitaire: 25, fraisPort: 0, vendeur: 'Delcampe',
-    dateCommande: ilYA(5) },
-  // Annule : sorti des montants, garde dans l'historique.
+    dateCommande: ilYA(5), paye: false },
+  // Annule : sorti des montants ET de ce qui reste a payer.
   { id: 'a6', article: 'Lot de doubles', collection: 'BD', statut: 'annule',
     quantite: 10, prixUnitaire: 100, fraisPort: 50, vendeur: 'eBay',
     dateCommande: ilYA(20) },
   // Litige : attendu, compte dans le depense, mais pas « a relancer ».
   { id: 'a7', article: 'Vinyle rare', collection: 'Vinyles', statut: 'probleme',
     quantite: 2, prixUnitaire: 40, fraisPort: 10, vendeur: 'Discogs',
-    dateCommande: ilYA(70), aRevendre: true },
+    dateCommande: ilYA(70), aRevendre: true, paye: true, modePaiement: 'Virement' },
 ];
 sandbox.premierChargement = false;
 
@@ -159,8 +160,21 @@ verifie('Un article recu n\'est jamais en retard', sandbox.estEnRetard(sandbox.a
 verifie('Sans date de commande, pas de retard',
   sandbox.estEnRetard({ statut: 'commande' }) === false);
 
-// --- 4. Doublons -------------------------------------------------
-console.log('\n4. Doublons');
+// --- 4. Paiement -------------------------------------------------
+console.log('\n4. Paiement');
+// Le cas qui compte : les lignes saisies AVANT l'arrivee du champ n'ont
+// pas de « paye » du tout. Elles doivent compter comme dues, sinon un
+// arriere se cache derriere un champ absent.
+verifie('Une ligne sans champ « paye » est due', sandbox.estAPayer(sandbox.achats[2]) === true);
+verifie('« paye: false » est du', sandbox.estAPayer(sandbox.achats[4]) === true);
+verifie('« paye: true » n\'est plus du', sandbox.estAPayer(sandbox.achats[0]) === false);
+// Une commande annulee ne se doit plus, meme jamais reglee.
+verifie('Une ligne annulee n\'est jamais due', sandbox.estAPayer(sandbox.achats[5]) === false);
+// Payer a la commande est la norme sur eBay : attendre n'est pas devoir.
+verifie('Un colis attendu peut etre deja regle', sandbox.estAPayer(sandbox.achats[3]) === false);
+
+// --- 5. Doublons -------------------------------------------------
+console.log('\n5. Doublons');
 verifie('cleArticle enleve accents, casse et ponctuation',
   sandbox.cleArticle("L'Étoile  mystérieuse !") === 'l etoile mysterieuse',
   sandbox.cleArticle("L'Étoile  mystérieuse !"));
@@ -184,24 +198,29 @@ verifie('L\'article encore en route est signale « deja en collection »',
 verifie('Un article jamais recu n\'est pas signale',
   !presentes[sandbox.cleArticle('Objet inconnu')]);
 
-// --- 5. Bandeau de chiffres --------------------------------------
-console.log('\n5. Bandeau de chiffres');
+// --- 6. Bandeau de chiffres --------------------------------------
+console.log('\n6. Bandeau de chiffres');
 sandbox.renderStats();
 const stats = elements['stats'].innerHTML;
 const valeurs = [...stats.matchAll(/<div class="stat-valeur">([^<]*)<\/div>/g)].map((m) => m[1]);
 // Depense = tout sauf a6 (annule) : 25 + 30 + 3 + 19 + 25 + 90 = 192
 verifie('« Dépensé » exclut les annulations', /192/.test(valeurs[0]), valeurs[0]);
+// A payer = a3 (3) + a5 (25) = 28 ; a6 annule ne compte pas malgre ses 1050
+verifie('« À payer » somme les lignes dues, annulations exclues',
+  /28/.test(valeurs[1]) && !/1050/.test(valeurs[1]), valeurs[1]);
 // Attendus : a4, a5, a7
-verifie('« En attente » compte 3 lignes', valeurs[1] === '3', valeurs[1]);
+verifie('« En attente » compte 3 lignes', valeurs[2] === '3', valeurs[2]);
 // En retard : a4 seulement
-verifie('« En retard » compte 1 ligne', valeurs[2] === '1', valeurs[2]);
+verifie('« En retard » compte 1 ligne', valeurs[3] === '1', valeurs[3]);
 // Recus : a1 + a2 + a3 = 3 exemplaires
-verifie('« Reçu » compte 3 exemplaires', valeurs[3] === '3', valeurs[3]);
-verifie('« En double » compte 1 exemplaire en trop', valeurs[4] === '1', valeurs[4]);
+verifie('« Reçu » compte 3 exemplaires', valeurs[4] === '3', valeurs[4]);
+verifie('« En double » compte 1 exemplaire en trop', valeurs[5] === '1', valeurs[5]);
 verifie('La tuile « En retard » passe en alerte', /stat--alerte/.test(stats));
+verifie('La tuile « À payer » s\'allume tant qu\'il reste un du',
+  /stat--impaye/.test(stats));
 
-// --- 6. Filtres --------------------------------------------------
-console.log('\n6. Filtres');
+// --- 7. Filtres --------------------------------------------------
+console.log('\n7. Filtres');
 sandbox.filtreStatut = 'attendus';
 verifie('Filtre par defaut : les 3 lignes attendues',
   sandbox.getAchatsFiltres('').length === 3, sandbox.getAchatsFiltres('').length);
@@ -213,6 +232,10 @@ sandbox.filtreStatut = 'revendre';
 verifie('Filtre « a revendre » ne montre que le marquage manuel',
   sandbox.getAchatsFiltres('').length === 1);
 
+sandbox.filtreStatut = 'apayer';
+verifie('Filtre « a payer » : la ligne sans champ et la ligne a false',
+  sandbox.getAchatsFiltres('').length === 2, sandbox.getAchatsFiltres('').length);
+
 sandbox.filtreStatut = 'tous';
 verifie('« Tout » montre les 7 lignes, annulation comprise',
   sandbox.getAchatsFiltres('').length === 7);
@@ -222,12 +245,15 @@ verifie('Filtre par collection', sandbox.getAchatsFiltres('').length === 5,
   sandbox.getAchatsFiltres('').length);
 sandbox.filtreCollection = 'toutes';
 
+sandbox.filtreStatut = 'tous';
 verifie('Recherche insensible a la casse', sandbox.getAchatsFiltres('discogs').length === 1);
 verifie('La recherche porte aussi sur les notes et le vendeur',
   sandbox.getAchatsFiltres('brocante').length === 1);
+verifie('La recherche porte sur le mode de paiement',
+  sandbox.getAchatsFiltres('carte bnp').length === 1, sandbox.getAchatsFiltres('carte bnp').length);
 
-// --- 7. Dates <input type="date"> --------------------------------
-console.log('\n7. Dates');
+// --- 8. Dates <input type="date"> --------------------------------
+console.log('\n8. Dates');
 // Le piege : « 2026-07-29 » seul est lu comme minuit UTC et affiche la
 // veille dans tout fuseau a l'ouest de Greenwich.
 const allerRetour = sandbox.inputDepuisDate(sandbox.dateDepuisInput('2026-07-29'));
@@ -238,8 +264,8 @@ verifie('Le 1er janvier garde ses zeros',
 verifie('Une date vide reste vide', sandbox.dateDepuisInput('') === null);
 verifie('Une date absente rend une chaine vide', sandbox.inputDepuisDate(null) === '');
 
-// --- 8. Echappement ----------------------------------------------
-console.log('\n8. Echappement');
+// --- 9. Echappement ----------------------------------------------
+console.log('\n9. Echappement');
 // Bug reel deja rencontre sur le hub : une apostrophe dans un libelle
 // cassait les onclick generes. Ici « L'Étoile mystérieuse » et les
 // collections saisies a la main sont exactement ce cas.
@@ -271,8 +297,8 @@ sandbox.render();
 souci = onclicksValides(elements['achats-list'].innerHTML);
 verifie('Tous les onclick de la vue doublons sont valides', souci === null, souci);
 
-// --- 9. Rendu ----------------------------------------------------
-console.log('\n9. Rendu');
+// --- 10. Rendu ---------------------------------------------------
+console.log('\n10. Rendu');
 verifie('La vue doublons affiche le titre de l\'article',
   elements['achats-list'].innerHTML.includes('Tintin'), 'titre absent');
 verifie('La vue doublons annonce le surplus',
@@ -288,8 +314,27 @@ verifie('Le badge « deja en collection » apparait sur le futur doublon',
 verifie('Le compteur annonce des lignes et un montant',
   /ligne/.test(elements['result-count'].textContent), elements['result-count'].textContent);
 
-// --- 10. Export --------------------------------------------------
-console.log('\n10. Export');
+sandbox.filtreStatut = 'tous';
+sandbox.render();
+const complet = elements['achats-list'].innerHTML;
+verifie('Une ligne due porte la mention « a payer » sous le montant',
+  /cell-sous--impaye/.test(complet), 'mention absente');
+verifie('Une ligne reglee affiche son mode de paiement',
+  complet.includes('PayPal') && complet.includes('Carte BNP'), 'mode absent');
+verifie('Le bouton de bascule est present sur les lignes reglees comme dues',
+  (complet.match(/basculerPaiement/g) || []).length === 6,
+  (complet.match(/basculerPaiement/g) || []).length + ' boutons');
+// On isole la vraie ligne du tableau plutot que de fenetrer sur N
+// caracteres : une fenetre trop courte passerait par accident.
+const ligneAnnulee = complet.split('<tr').find((tr) => tr.includes('Lot de doubles'));
+verifie('La ligne annulee est bien rendue', !!ligneAnnulee);
+verifie('Aucune bascule de paiement sur une ligne annulee',
+  !!ligneAnnulee && !ligneAnnulee.includes('basculerPaiement'), 'bascule presente sur l\'annulee');
+verifie('Ni mention « a payer » sur une ligne annulee',
+  !!ligneAnnulee && !ligneAnnulee.includes('cell-sous--impaye'));
+
+// --- 11. Export --------------------------------------------------
+console.log('\n11. Export');
 sandbox.exporterJson();
 verifie('Un fichier est bien telecharge', telechargements.length === 1);
 const contenu = JSON.parse(blobs.get(telechargements[0].href).parts[0]);
@@ -300,6 +345,9 @@ verifie('Les horodatages sortent en ISO',
   && contenu.achats[0].dateCommande.includes('T'), contenu.achats[0].dateCommande);
 verifie('Le total de chaque ligne est calcule dans l\'export',
   contenu.achats.some((a) => a.total > 0));
+verifie('L\'export porte le paiement et son mode',
+  contenu.achats.some((a) => a.paye === true && a.modePaiement === 'PayPal')
+  && contenu.achats.some((a) => a.paye === false), 'paiement absent de l\'export');
 verifie('Le nom de fichier est date',
   /^achats-collections-\d{4}-\d{2}-\d{2}\.json$/.test(telechargements[0].download),
   telechargements[0].download);
