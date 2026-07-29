@@ -403,13 +403,13 @@ body.login-page {
     margin-bottom: var(--spacing-sm);
 }
 
-/* ---------- 7. Tableau des idees ---------- */
-.idees-list {
+/* ---------- 7. Tableau de donnees ---------- */
+.data-list {
     padding-bottom: 20px;
     overflow-x: auto;
 }
 
-.idees-table {
+.data-table {
     width: 100%;
     border-collapse: collapse;
     background: #fff;
@@ -419,7 +419,7 @@ body.login-page {
     font-size: 0.88rem;
 }
 
-.idees-table th {
+.data-table th {
     text-align: left;
     padding: 10px;
     background: var(--color-surface);
@@ -435,38 +435,38 @@ body.login-page {
 .th-sort:hover { color: var(--color-primary); }
 .th-sort i { color: var(--color-accent); }
 
-.idees-table td {
+.data-table td {
     padding: 8px 10px;
     border-top: 1px solid var(--color-border-light);
     vertical-align: middle;
     white-space: nowrap;
 }
 
-.idees-table tbody tr {
+.data-table tbody tr {
     cursor: pointer;
     transition: background 0.12s;
 }
-.idees-table tbody tr:hover { background: var(--color-surface); }
+.data-table tbody tr:hover { background: var(--color-surface); }
 
-.idee-row--close { opacity: 0.55; }
+.ligne--terne { opacity: 0.55; }
 
-.idee-num-cell {
+.cell-num {
     color: var(--color-text-muted);
     font-variant-numeric: tabular-nums;
     font-size: 0.8rem;
 }
 
-.idee-titre-cell {
+.cell-principale {
     white-space: normal;
     min-width: 280px;
     width: 100%;
 }
-.idee-titre {
+.cell-titre {
     font-weight: 500;
     color: var(--color-text);
     line-height: 1.35;
 }
-.idee-detail {
+.cell-note {
     display: -webkit-box;
     -webkit-line-clamp: 2;
     -webkit-box-orient: vertical;
@@ -477,16 +477,16 @@ body.login-page {
     line-height: 1.4;
 }
 
-.idee-date-cell {
+.cell-date {
     color: var(--color-text-muted);
     text-align: center;
     cursor: help;
     font-size: 0.8rem;
 }
 
-.idee-etat-cell { min-width: 124px; }
+.cell-statut { min-width: 124px; }
 
-.idee-etat-select {
+.statut-select {
     font-family: inherit;
     font-size: 0.8rem;
     font-weight: 600;
@@ -694,17 +694,157 @@ body.login-page {
 .toast-error   { background: var(--color-danger); cursor: pointer; }
 .toast-info    { background: var(--color-primary); }
 
-/* ---------- 11. Mobile : le tableau devient des fiches ---------- */
+/* ---------- 11. Suivi des achats ---------- */
+
+/* Boutons secondaires de l'en-tete de page */
+.page-header-actions {
+    display: flex;
+    gap: var(--spacing-sm);
+    align-items: center;
+    flex-wrap: wrap;
+}
+
+.btn-export {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 16px;
+    background: #fff;
+    color: var(--color-text-secondary);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
+    font-family: inherit;
+    font-size: 0.9rem;
+    cursor: pointer;
+    min-height: 44px;
+    white-space: nowrap;
+    transition: background var(--transition-fast), color var(--transition-fast);
+}
+.btn-export:hover { background: var(--color-surface); color: var(--color-primary); }
+
+/* Bandeau de chiffres. Le liseré gauche porte le sens : il ne rougit
+   que quand quelque chose demande une action. */
+.stats {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(155px, 1fr));
+    gap: var(--spacing-sm);
+    margin-bottom: var(--spacing-lg);
+}
+
+.stat {
+    background: #fff;
+    border: 1px solid var(--color-border-light);
+    border-left: 3px solid var(--color-border);
+    border-radius: var(--radius-md);
+    padding: 10px 14px;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+}
+
+.stat-label {
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--color-text-muted);
+}
+
+.stat-valeur {
+    font-size: 1.3rem;
+    font-weight: 700;
+    line-height: 1.25;
+    color: var(--color-primary);
+    font-variant-numeric: tabular-nums;
+}
+
+.stat-detail {
+    font-size: 0.76rem;
+    color: var(--color-text-muted);
+    line-height: 1.35;
+}
+
+.stat--attente  { border-left-color: #1976D2; }
+.stat--ok       { border-left-color: var(--color-success); }
+.stat--revendre { border-left-color: #8D6708; }
+.stat--alerte   { border-left-color: var(--color-danger); }
+.stat--alerte .stat-valeur { color: var(--color-danger); }
+
+/* Cellules propres au tableau des achats */
+.cell-badges { margin-top: 3px; display: flex; gap: 4px; flex-wrap: wrap; }
+
+.cell-montant {
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+    font-weight: 500;
+    cursor: help;
+}
+
+.cell-vendeur {
+    color: var(--color-text-secondary);
+    font-size: 0.84rem;
+    max-width: 150px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* La date porte deux lignes : la date, puis l'anciennete ou la reception.
+   Sans ce display, .cell-note hériterait du -webkit-box de sa regle
+   generale et la seconde ligne passerait a la trappe. */
+.cell-date .cell-note { display: block; font-size: 0.74rem; }
+
+/* Texte discret dans une cellule. Volontairement distinct de .cell-note,
+   qui est une boite a lignes tronquees : l'appliquer a un <td> ecraserait
+   son display: table-cell. */
+.cell-info {
+    color: var(--color-text-muted);
+    font-size: 0.8rem;
+    cursor: help;
+}
+
+.badge-collection { background: #E4F5F2; color: #0B6B60; }
+.badge-retard     { background: #FEE4E4; color: #A63030; font-weight: 700; }
+.badge-deja       { background: #FFF3C4; color: #8D6708; font-weight: 500; }
+.badge-revendre   { background: #EDE4F7; color: #5B2C8D; font-weight: 500; }
+
+/* Formulaire */
+.field-hint {
+    font-size: 0.72rem;
+    color: var(--color-text-muted);
+    line-height: 1.3;
+}
+
+.checkbox-inline {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.9rem;
+    color: var(--color-text-secondary);
+    cursor: pointer;
+    min-height: 32px;
+}
+.checkbox-inline input { margin: 0; }
+
+/* Avertissement « vous en avez deja un », affiche pendant la frappe */
+.alerte-doublon {
+    grid-column: 1 / -1;
+    background: #FFF8E1;
+    border: 1px solid #F5D97A;
+    border-radius: var(--radius-sm);
+    padding: 8px 12px;
+    font-size: 0.84rem;
+    color: #7A5200;
+}
+.alerte-doublon i { margin-right: 6px; }
+
+/* ---------- 12. Mobile : le tableau devient des fiches ---------- */
 @media (max-width: 760px) {
-    .idees-table {
+    .data-table {
         border: none;
         background: transparent;
         box-shadow: none;
     }
-    .idees-table thead { display: none; }
-    .idees-table,
-    .idees-table tbody { display: block; }
-    .idees-table tr {
+    .data-table thead { display: none; }
+    .data-table,
+    .data-table tbody { display: block; }
+    .data-table tr {
         display: block;
         background: #fff;
         border: 1px solid var(--color-border-light);
@@ -713,25 +853,36 @@ body.login-page {
         margin-bottom: 10px;
         box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
     }
-    .idees-table td {
+    .data-table td {
         display: inline-block;
         border: none;
         padding: 2px 6px 2px 0;
         vertical-align: middle;
     }
-    .idees-table td.idee-titre-cell {
+    .data-table td.cell-principale {
         display: block;
         min-width: 0;
         width: auto;
         padding: 6px 0 4px;
     }
-    .idee-detail { -webkit-line-clamp: 3; }
-    .idee-date-cell { display: none; }
+    .cell-note { -webkit-line-clamp: 3; }
     .row-actions-cell { float: right; }
+
+    /* La date reste visible ici, contrairement au tableau des idees :
+       c'est elle qui porte « il y a 34 j », l'information qui declenche
+       une relance. On la degrade en petit texte plutot que de la cacher. */
+    .cell-date {
+        text-align: left;
+        font-size: 0.76rem;
+    }
+    .cell-date .cell-note { display: inline; margin-left: 4px; }
+    .cell-montant { text-align: left; }
 }
 
 @media (max-width: 600px) {
     .modal-form { grid-template-columns: 1fr; }
     .modal { padding: var(--spacing-lg); }
     .page-header { flex-direction: column; align-items: stretch; }
+    .stats { grid-template-columns: repeat(auto-fit, minmax(135px, 1fr)); }
+    .stat-valeur { font-size: 1.1rem; }
 }
