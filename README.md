@@ -15,7 +15,7 @@ dans `firestore.rules` et dans le `projets.js` des deux dépôts :
 
 | Slug | Page | Ce que le droit ouvre | Portée |
 |---|---|---|---|
-| `achats` | `index.html` | Le suivi des achats | **Commun** — tout le monde voit les mêmes lignes |
+| `achats` | `index.html` | Le suivi des achats | Commun **pour l'instant** — doit être cloisonné, voir plus bas |
 | `fournisseurs` | `comptes.html` | Fournisseurs et identifiants | **Cloisonné** — chacun ne voit que ses propres fiches |
 
 **Donner un accès se fait sur la page Membres du hub**, en cochant la case du projet.
@@ -226,10 +226,30 @@ n'y a rien à moi » ne se confondent pas.
 > peut faire. La page le fait une fois au chargement et propose un bouton
 > « Me les attribuer ». Le bandeau disparaît quand il n'y a plus rien à reprendre.
 
-**Les achats, eux, restent communs.** Deux personnes qui suivent la même collection ont
-besoin de voir les mêmes commandes. Si ça devait changer, le même champ `proprietaire`
-et le même `where` s'appliqueraient — mais c'est une décision de produit, pas une
-conséquence technique.
+> ### ⚠ Les achats doivent l'être aussi — décidé, pas encore fait
+>
+> **Décision du 30 juillet 2026 : les achats ne sont pas communs.** Chacun gère les
+> siens, et chaque ligne doit être rattachée au membre qui l'a créée. Ce n'est pas
+> implémenté à ce jour : la collection `achats` reste ouverte à tous ceux qui ont le
+> droit, et sa règle est encore `allow read, write: if aAcces('achats')`.
+>
+> Le patron à appliquer est celui décrit ci-dessus, à l'identique :
+>
+> 1. champ `proprietaire` sur chaque ligne d'achat, posé à la création, immuable ;
+> 2. `where('proprietaire', '==', …)` dans `ecouterAchats()` — **obligatoire**, sans quoi
+>    la page est entièrement vide et non pas partielle ;
+> 3. règles séparées par opération dans `firestore.rules`, comme pour `fournisseurs` ;
+> 4. reprise des lignes déjà saisies, qui n'ont pas le champ et deviendraient invisibles.
+>
+> Deux points à trancher au moment de le faire, parce qu'ils touchent le sens des
+> chiffres et pas seulement les droits :
+>
+> - **Les doublons se calculent-ils par personne ou globalement ?** Le cloisonnement les
+>   rend personnels par construction — deux membres possédant le même article ne verront
+>   plus un doublon. C'est probablement ce qu'on veut, mais ça change la réponse à « qu'est-ce
+>   que je peux revendre ? ».
+> - **Le bandeau de chiffres devient personnel** (« Dépensé », « À payer »…). S'il faut un
+>   total pour le foyer, il demandera une lecture que les règles refusent aux membres.
 
 Le `modePaiement` d'un compte porte **le même vocabulaire** que celui d'une ligne
 d'achat (« carte BNP », « PayPal ») : ici le moyen enregistré chez ce fournisseur, là
@@ -421,6 +441,10 @@ La vraie gestion des collections se construira **au-dessus de ces lignes**, pas 
 côté : un objet possédé, c'est une ligne d'achat reçue. Pistes, dans l'ordre où
 elles deviennent utiles :
 
+0. **Cloisonner les achats par membre** — décidé le 30/07/2026, à faire en premier.
+   Chaque ligne rattachée à son créateur, même patron que `fournisseurs`. Détails et
+   points à trancher dans « Les achats doivent l'être aussi » ci-dessus. À faire **avant**
+   l'inventaire : celui-ci s'agrège depuis les achats, il héritera du découpage.
 1. **Inventaire** — une vue « ce que je possède » agrégée par article, avec les
    manques d'une collection (« il me manque les n° 12, 17, 23 »).
 2. **Ventes** — un statut `vendu` et un prix de vente, pour boucler la boucle du
