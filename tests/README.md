@@ -50,7 +50,8 @@ Le reste couvre l'unicité du compte principal, la suppression en cascade, et le
 que la recherche ne porte pas sur les mots de passe — sinon on pourrait en confirmer un
 par tâtonnement sans jamais l'afficher.
 
-**La requête filtrée par propriétaire.** Une règle Firestore n'est pas un filtre : le
+**La requête filtrée par propriétaire** — vérifiée sur les deux pages, `achats` et
+`fournisseurs`. Une règle Firestore n'est pas un filtre : le
 serveur rejette *en bloc* toute requête qui pourrait ramener un document interdit. Si
 quelqu'un retire un jour le `where('proprietaire', ...)`, la page ne montrera pas une liste
 partielle — elle sera entièrement vide, avec une erreur de permissions, alors que les

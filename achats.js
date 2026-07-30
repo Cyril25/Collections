@@ -17,6 +17,12 @@
 //
 // Écoute temps réel (onSnapshot) : une ligne saisie sur le téléphone
 // pendant une brocante apparaît sur le PC sans rechargement.
+//
+// CHACUN CHEZ SOI. Chaque ligne porte un champ « proprietaire » (email du
+// détenteur) et les règles Firestore ne laissent voir que les siennes.
+// Conséquence directe : les doublons et le bandeau de chiffres sont
+// personnels — deux personnes possédant chacune un exemplaire du même
+// article ne forment pas un doublon.
 // ============================================================
 
 // ------------------------------------------------------------
@@ -62,14 +68,95 @@ var filtreCollection = 'toutes';
 var tri = { cle: 'dateCommande', sens: -1 };
 var idEnEdition = null;
 var premierChargement = true;
+// Email dont on affiche les lignes. Celui de la personne « effective » :
+// sous impersonation on regarde bien les achats de l'autre, sinon la vue
+// ne montrerait pas ce qu'elle voit.
+var proprietaireVu = '';
+var lignesOrphelines = [];
 
 // ------------------------------------------------------------
 // 3. Démarrage (appelé par auth.js une fois l'accès validé)
 // ------------------------------------------------------------
 function onHubReady() {
     db = firebase.firestore();
+    proprietaireVu = normaliserEmail(
+        (HUB.effectif && HUB.effectif.email) || (HUB.user && HUB.user.email));
     remplirSelectStatut();
+    afficherProprietaire();
     ecouterAchats();
+    // Rattrapage des lignes d'avant le cloisonnement : seul le
+    // propriétaire du hub peut les retrouver.
+    if (estSuperadminReel() && !HUB.impersonation) chercherLignesOrphelines();
+}
+
+// Le superadmin voit les lignes d'un seul propriétaire à la fois : autant
+// dire lequel, sinon « il n'y a rien » et « il n'y a rien À MOI » se
+// confondent. Un membre ordinaire ne voit jamais que les siennes.
+function afficherProprietaire() {
+    var bloc = document.getElementById('proprietaire-vu');
+    if (!bloc) return;
+    if (!estSuperadminReel()) {
+        bloc.style.display = 'none';
+        return;
+    }
+    bloc.innerHTML = '<i class="fa-solid fa-user-lock"></i> Achats de <strong>'
+        + escapeHtml(proprietaireVu) + '</strong> — chacun ne voit que les siens.';
+    bloc.style.display = '';
+}
+
+// ------------------------------------------------------------
+// 3b. Rattrapage des lignes sans propriétaire
+// ------------------------------------------------------------
+// Même situation que sur la page Comptes : les lignes créées avant le
+// cloisonnement n'ont pas de champ « proprietaire », ne correspondent donc
+// à aucune requête filtrée, et deviendraient invisibles pour toujours.
+//
+// Firestore ne sait pas interroger l'ABSENCE d'un champ — ni
+// `where('proprietaire', '==', null)`, qui ne trouve que les null
+// explicites. D'où la lecture de toute la collection, que seul le
+// superadmin peut faire, une seule fois au chargement.
+function chercherLignesOrphelines() {
+    db.collection('achats').get().then(function(snapshot) {
+        lignesOrphelines = [];
+        snapshot.forEach(function(doc) {
+            if (!doc.data().proprietaire) lignesOrphelines.push(doc.id);
+        });
+        var bloc = document.getElementById('orphelines');
+        if (!bloc || !lignesOrphelines.length) return;
+        var nb = lignesOrphelines.length;
+        bloc.innerHTML = '<i class="fa-solid fa-inbox"></i>'
+            + '<div><strong>' + nb + ' ligne' + (nb > 1 ? 's' : '')
+            + ' sans propriétaire.</strong> '
+            + 'Saisie' + (nb > 1 ? 's' : '') + ' avant le cloisonnement, '
+            + (nb > 1 ? 'elles n\'apparaissent' : 'elle n\'apparaît')
+            + ' dans aucune liste et ne compte' + (nb > 1 ? 'nt' : '')
+            + ' dans aucun total.'
+            + '<button type="button" class="btn-reprise" '
+            + 'onclick="adopterLignesOrphelines()">Me ' + (nb > 1 ? 'les' : 'l\'')
+            + ' attribuer</button></div>';
+        bloc.style.display = '';
+    }).catch(function(erreur) {
+        // Pas bloquant : sans ce rattrapage la page marche, elle montre
+        // juste moins de choses.
+        console.warn('Recherche des lignes orphelines impossible :', erreur.message);
+    });
+}
+
+function adopterLignesOrphelines() {
+    if (!lignesOrphelines.length) return;
+    var lot = db.batch();
+    lignesOrphelines.forEach(function(id) {
+        lot.update(db.collection('achats').doc(id), { proprietaire: proprietaireVu });
+    });
+    lot.commit().then(function() {
+        showToast(lignesOrphelines.length + ' ligne(s) reprise(s).', 'success');
+        lignesOrphelines = [];
+        var bloc = document.getElementById('orphelines');
+        if (bloc) bloc.style.display = 'none';
+    }).catch(function(erreur) {
+        console.error(erreur);
+        showToast('Reprise impossible : ' + erreur.message, 'error');
+    });
 }
 
 function remplirSelectStatut() {
@@ -81,7 +168,14 @@ function remplirSelectStatut() {
 }
 
 function ecouterAchats() {
-    db.collection('achats').onSnapshot(function(snapshot) {
+    // ⚠ REQUÊTE OBLIGATOIREMENT FILTRÉE. Une règle Firestore n'est pas un
+    // filtre : le serveur rejette en bloc toute requête qui POURRAIT
+    // ramener un document interdit. Sans ce `where`, la page ne serait pas
+    // partiellement vide — elle serait totalement vide, avec une erreur de
+    // permissions, alors que les lignes sont bien là.
+    db.collection('achats')
+      .where('proprietaire', '==', proprietaireVu)
+      .onSnapshot(function(snapshot) {
         achats = [];
         snapshot.forEach(function(doc) {
             var data = doc.data();
@@ -99,7 +193,8 @@ function ecouterAchats() {
                 '<strong>Impossible de lire les achats.</strong><br>' +
                 '<span style="color:var(--color-text-muted)">' + escapeHtml(erreur.message) + '</span><br>' +
                 '<span style="color:var(--color-text-muted)">Si le message parle de permissions : le bloc ' +
-                '<code>match /achats</code> n\'est pas publié dans les règles Firestore.</span>' +
+                '<code>match /achats</code> n\'est pas publié dans les règles Firestore, ' +
+                'ou sa version publiée est antérieure au cloisonnement par propriétaire.</span>' +
                 '</div>';
         }
     });
@@ -856,8 +951,16 @@ function sauverAchat() {
 
     var operation;
     if (idEnEdition) {
+        // `proprietaire` n'est jamais réécrit : les règles l'interdisent, et
+        // une ligne qui change de main sans qu'on l'ait demandé serait pire
+        // qu'une ligne mal rangée.
         operation = db.collection('achats').doc(idEnEdition).update(donnees);
     } else {
+        donnees.proprietaire = proprietaireVu;
+        // Traçabilité : l'utilisateur RÉEL, jamais l'impersonné. Sous
+        // impersonation les écritures partent avec le jeton du superadmin,
+        // inscrire l'autre identité ferait mentir la trace.
+        donnees.creePar = normaliserEmail(HUB.user && HUB.user.email);
         donnees.createdAt = firebase.firestore.FieldValue.serverTimestamp();
         operation = db.collection('achats').add(donnees);
     }
@@ -948,6 +1051,10 @@ function exporterJson() {
     var contenu = {
         exporte_le: new Date().toISOString(),
         source: window.location.hostname + ' — collection Firestore « achats »',
+        // L'export ne sort que les lignes affichées, donc celles d'un seul
+        // propriétaire : c'est écrit dedans, sans quoi deux exports de deux
+        // personnes se confondraient une fois sur le disque.
+        proprietaire: proprietaireVu,
         nombre: triees.length,
         achats: triees.map(function(achat) {
             var iso = function(valeur) { var d = toDate(valeur); return d ? d.toISOString() : null; };

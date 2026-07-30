@@ -15,8 +15,11 @@ dans `firestore.rules` et dans le `projets.js` des deux dépôts :
 
 | Slug | Page | Ce que le droit ouvre | Portée |
 |---|---|---|---|
-| `achats` | `index.html` | Le suivi des achats | Commun **pour l'instant** — doit être cloisonné, voir plus bas |
+| `achats` | `index.html` | Le suivi des achats | **Cloisonné** — chacun ne voit que ses propres lignes |
 | `fournisseurs` | `comptes.html` | Fournisseurs et identifiants | **Cloisonné** — chacun ne voit que ses propres fiches |
+
+Les deux sont cloisonnés par `proprietaire` : cocher une case ouvre **une page**, jamais
+les données de quelqu'un d'autre.
 
 **Donner un accès se fait sur la page Membres du hub**, en cochant la case du projet.
 C'est le seul endroit qui écrit dans `membres.projets`, et c'est voulu : un droit qui se
@@ -92,6 +95,8 @@ précisément le cas qu'on cherche à rattraper.
 | `quantite` | int | ≥ 1 |
 | `prixUnitaire` | number | € par exemplaire |
 | `fraisPort` | number | € pour la ligne entière |
+| `proprietaire` | string | Email du détenteur — **immuable**, posé à la création |
+| `creePar` | string | Email de l'utilisateur **réel** au moment de la saisie |
 | `vendeur` | string | eBay, Delcampe, brocante… |
 | `compteEmail` | string | Adresse du compte depuis lequel la commande a été passée |
 | `paye` | bool | Réglé ou non. **Absent = dû** (voir plus bas) |
@@ -245,32 +250,22 @@ L'interface affiche en clair de qui elle montre les fiches, pour que « il n'y a
 > peut faire. La page le fait une fois au chargement et propose un bouton
 > « Me les attribuer ». Le bandeau disparaît quand il n'y a plus rien à reprendre.
 
-> ### ⚠ Les achats doivent l'être aussi — décidé, pas encore fait
->
-> **Décision du 30 juillet 2026 : les achats ne sont pas communs.** Chacun gère les
-> siens, et chaque ligne doit être rattachée au membre qui l'a créée. Ce n'est pas
-> implémenté à ce jour : la collection `achats` reste ouverte à tous ceux qui ont le
-> droit, et sa règle est encore `allow read, write: if aAcces('achats')`.
->
-> Le patron à appliquer est celui décrit ci-dessus, à l'identique :
->
-> 1. champ `proprietaire` sur chaque ligne d'achat, posé à la création, immuable ;
-> 2. `where('proprietaire', '==', …)` dans `ecouterAchats()` — **obligatoire**, sans quoi
->    la page est entièrement vide et non pas partielle ;
-> 3. règles séparées par opération dans `firestore.rules`, comme pour `fournisseurs` ;
-> 4. reprise des lignes déjà saisies, qui n'ont pas le champ et deviendraient invisibles.
->
-> Deux points à trancher au moment de le faire, parce qu'ils touchent le sens des
-> chiffres et pas seulement les droits :
->
-> - **Les doublons deviennent personnels par construction.** Aujourd'hui, si deux membres
->   saisissent chacun une ligne reçue « fève n°42 », le regroupement par nom d'article les
->   voit comme deux exemplaires du même article et signale un doublon revendable. Après
->   cloisonnement, non : chacun n'en a qu'un chez lui. C'est cohérent avec « chacun sa
->   collection », mais il faut le vouloir — ça change la réponse à « qu'est-ce que je peux
->   revendre ? ».
-> - **Le bandeau de chiffres devient personnel** (« Dépensé », « À payer »…). S'il faut un
->   total pour le foyer, il demandera une lecture que les règles refusent aux membres.
+### Les achats le sont aussi
+
+**Les achats ne sont pas communs** : chacun gère les siens. Même champ `proprietaire`,
+même `where` obligatoire, mêmes règles séparées par opération. Ce qui vaut pour les
+fournisseurs ci-dessus vaut mot pour mot pour les achats.
+
+Deux conséquences sur le **sens des chiffres**, qui ne sont pas des effets de bord mais la
+raison d'être du découpage :
+
+- **Les doublons sont personnels.** Si deux membres possèdent chacun un exemplaire de la
+  « fève n°42 », aucun doublon n'est signalé — chacun n'en a qu'un chez lui. Avant le
+  cloisonnement, le regroupement par nom d'article les voyait comme deux exemplaires du
+  même article et proposait d'en revendre un.
+- **Le bandeau de chiffres est personnel** (« Dépensé », « À payer », « En retard »…).
+  Il n'y a pas de total pour le foyer : l'obtenir demanderait une lecture que les règles
+  refusent aux membres, donc un écran réservé au propriétaire du hub. Pas prévu à ce jour.
 
 Le `modePaiement` d'un compte porte **le même vocabulaire** que celui d'une ligne
 d'achat (« carte BNP », « PayPal ») : ici le moyen enregistré chez ce fournisseur, là
@@ -408,27 +403,16 @@ sans regarder :
 
 ### ⚠ Règle Firestore à publier — sinon la page reste vide
 
-Les règles vivent dans le dépôt du hub. Les blocs de ce site y sont déjà écrits — **il
-y en a deux** :
+Les règles vivent dans le dépôt du hub. Ce site en utilise **deux blocs**, `achats` et
+`fournisseurs`, tous deux **cloisonnés par `proprietaire`** avec quatre règles séparées
+par opération (voir « Chacun chez soi »). Pour `fournisseurs`, c'est la seule barrière
+entre des mots de passe en clair et le reste d'Internet — ne jamais l'élargir « pour
+dépanner ».
 
-```
-match /achats/{document} {
-  allow read, write: if aAcces('achats');
-}
-
-match /fournisseurs/{document} {
-  allow read, write: if aAcces('fournisseurs');
-}
-```
-
-Le bloc `fournisseurs` est plus long que ça : il **cloisonne par `proprietaire`** (voir
-« Chacun chez soi »). C'est la seule barrière entre des mots de passe en clair et le reste
-d'Internet — ne jamais l'élargir « pour dépanner ».
-
-> ⚠ **Le cloisonnement est arrivé après une première version du bloc.** Si la version
-> publiée dans la console est l'ancienne (`allow read, write: if aAcces('fournisseurs')`),
-> chacun voit tout : republier `firestore.rules` est ce qui applique réellement la
-> séparation. Le message d'erreur de la page mentionne ce cas.
+> ⚠ **Le cloisonnement est arrivé après une première version de chaque bloc.** Si la
+> version publiée dans la console est encore un `allow read, write: if aAcces(…)` unique,
+> chacun voit tout : **republier `firestore.rules` est ce qui applique réellement la
+> séparation.** Le message d'erreur des deux pages mentionne ce cas.
 
 **Il faut encore le publier** : console Firebase → Firestore Database → onglet
 *Règles* → coller `firestore.rules` du dépôt Admin → *Publier*. Les règles ne se
@@ -464,12 +448,9 @@ La vraie gestion des collections se construira **au-dessus de ces lignes**, pas 
 côté : un objet possédé, c'est une ligne d'achat reçue. Pistes, dans l'ordre où
 elles deviennent utiles :
 
-0. **Cloisonner les achats par membre** — décidé le 30/07/2026, à faire en premier.
-   Chaque ligne rattachée à son créateur, même patron que `fournisseurs`. Détails et
-   points à trancher dans « Les achats doivent l'être aussi » ci-dessus. À faire **avant**
-   l'inventaire : celui-ci s'agrège depuis les achats, il héritera du découpage.
 1. **Inventaire** — une vue « ce que je possède » agrégée par article, avec les
-   manques d'une collection (« il me manque les n° 12, 17, 23 »).
+   manques d'une collection (« il me manque les n° 12, 17, 23 »). Elle héritera du
+   cloisonnement, puisqu'elle s'agrège depuis les lignes d'achat : chacun son inventaire.
 2. **Ventes** — un statut `vendu` et un prix de vente, pour boucler la boucle du
    surplus et savoir ce qu'une revente a rapporté.
 3. **Photos** — via Cloudinary, comme le projet Extérieur du hub.

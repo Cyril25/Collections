@@ -147,7 +147,7 @@ function chercherFichesOrphelines() {
             + (nb > 1 ? 'elles n\'apparaissent' : 'elle n\'apparaît')
             + ' dans aucune liste tant que personne ne '
             + (nb > 1 ? 'les' : 'l\'') + 'a reprise' + (nb > 1 ? 's' : '') + '.'
-            + '<button type="button" class="btn-ajout-compte" style="margin-left:8px" '
+            + '<button type="button" class="btn-reprise" '
             + 'onclick="adopterFichesOrphelines()">Me ' + (nb > 1 ? 'les' : 'l\'')
             + ' attribuer</button></div>';
         bloc.style.display = '';

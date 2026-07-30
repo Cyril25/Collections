@@ -931,6 +931,23 @@ body.login-page {
 .avertissement--info i { color: #1976D2; }
 .avertissement--info strong { display: inline; }
 
+/* Bouton du bandeau de reprise. Classe a lui plutot que de recycler
+   .btn-ajout-compte : les couleurs du bandeau bleu ne sont pas celles du
+   reste de la page, et l'emprunt se serait casse au premier changement. */
+.btn-reprise {
+    margin-left: var(--spacing-sm);
+    padding: 4px 12px;
+    background: #fff;
+    color: #1B4E7E;
+    border: 1px solid #A9CBEA;
+    border-radius: var(--radius-sm);
+    font-family: inherit;
+    font-size: 0.8rem;
+    cursor: pointer;
+    white-space: nowrap;
+}
+.btn-reprise:hover { background: #DCEAF7; }
+
 /* Qui regarde-t-on ? Discret : c'est un reperage, pas une alerte. */
 .proprietaire-vu {
     margin: calc(-1 * var(--spacing-sm)) 0 var(--spacing-md);

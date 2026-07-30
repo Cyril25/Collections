@@ -55,9 +55,39 @@ const FakeURL = {
   revokeObjectURL() {},
 };
 
-// Firebase n'est pas charge : seul Timestamp.fromDate sert hors reseau.
+// Faux Firestore : on veut verifier ce qui PART EN BASE et avec quel
+// filtre. Une requete non filtree serait rejetee en bloc par les regles.
+const ecritures = [];
+const requetes = [];
+const fauxDb = {
+  batch() {
+    const operations = [];
+    return {
+      update(ref, data) { operations.push({ type: 'update', id: ref.id, data }); },
+      commit() { operations.forEach((o) => ecritures.push(o)); return Promise.resolve(); },
+    };
+  },
+  collection() {
+    return {
+      doc(id) {
+        const reference = id || 'nouveau-doc';
+        return {
+          id: reference,
+          update(data) { ecritures.push({ type: 'update', id: reference, data }); return Promise.resolve(); },
+        };
+      },
+      add(data) { ecritures.push({ type: 'add', data }); return Promise.resolve({ id: 'nouveau-doc' }); },
+      onSnapshot() {},
+      where(champ, operateur, valeur) {
+        requetes.push({ champ, operateur, valeur });
+        return { onSnapshot() {} };
+      },
+      get: () => Promise.resolve({ forEach() {} }),
+    };
+  },
+};
 const firebase = {
-  firestore: Object.assign(() => ({}), {
+  firestore: Object.assign(() => fauxDb, {
     Timestamp: { fromDate: (d) => ({ toDate: () => d, __ts: true }) },
     FieldValue: { serverTimestamp: () => ({ __serveur: true }) },
   }),
@@ -117,6 +147,18 @@ sandbox.achats = [
     dateCommande: ilYA(70), aRevendre: true, paye: true, modePaiement: 'Virement' },
 ];
 sandbox.premierChargement = false;
+// onHubReady() n'est pas appele hors navigateur : on branche le faux
+// Firestore et l'etat que auth.js aurait rempli.
+sandbox.db = fauxDb;
+sandbox.HUB = {
+  user: { email: 'Cyril.Samson41@Gmail.com' },
+  membre: { email: 'cyril.samson41@gmail.com', role: 'superadmin' },
+  effectif: { email: 'cyril.samson41@gmail.com', role: 'superadmin' },
+  impersonation: '',
+};
+sandbox.normaliserEmail = (e) => String(e || '').trim().toLowerCase();
+sandbox.estSuperadminReel = () => true;
+sandbox.proprietaireVu = 'cyril.samson41@gmail.com';
 
 let echecs = 0;
 function verifie(nom, condition, detail) {
@@ -333,8 +375,88 @@ verifie('Aucune bascule de paiement sur une ligne annulee',
 verifie('Ni mention « a payer » sur une ligne annulee',
   !!ligneAnnulee && !ligneAnnulee.includes('cell-sous--impaye'));
 
-// --- 11. Export --------------------------------------------------
-console.log('\n11. Export');
+// --- 11. Cloisonnement par proprietaire --------------------------
+console.log('\n11. Cloisonnement par proprietaire');
+
+// LE test qui compte. Les regles ne laissent lire que ses propres lignes,
+// et Firestore rejette EN BLOC une requete qui pourrait ramener un
+// document interdit. Sans `where`, la page n'est pas partielle : elle est
+// vide, avec une erreur de permissions, alors que les lignes sont la.
+requetes.length = 0;
+sandbox.onHubReady();
+verifie('L\'ecoute filtre sur le proprietaire',
+  requetes.some((r) => r.champ === 'proprietaire' && r.operateur === '=='),
+  JSON.stringify(requetes));
+verifie('L\'email du filtre est normalise en minuscules',
+  requetes[0] && requetes[0].valeur === 'cyril.samson41@gmail.com', requetes[0] && requetes[0].valeur);
+
+// Sous impersonation, on regarde les achats de l'AUTRE : sinon la vue ne
+// montre pas ce que l'autre voit.
+requetes.length = 0;
+sandbox.HUB.effectif = { email: 'marie@gmail.com', role: 'membre', projets: ['achats'] };
+sandbox.HUB.impersonation = 'marie@gmail.com';
+sandbox.onHubReady();
+verifie('Sous impersonation, on lit les achats de la personne regardee',
+  requetes[0] && requetes[0].valeur === 'marie@gmail.com', requetes[0] && requetes[0].valeur);
+
+// Une ligne creee porte son proprietaire, sans quoi elle serait invisible
+// des le rechargement suivant — et absente de tous les totaux.
+ecritures.length = 0;
+sandbox.idEnEdition = null;
+document.getElementById('f-article').value = 'Fève n°42';
+document.getElementById('f-collection').value = 'Fèves';
+document.getElementById('f-statut').value = 'commande';
+document.getElementById('f-quantite').value = '1';
+document.getElementById('f-prix').value = '3,50';
+document.getElementById('f-port').value = '';
+document.getElementById('f-vendeur').value = 'Delcampe';
+document.getElementById('f-suivi').value = '';
+document.getElementById('f-notes').value = '';
+document.getElementById('f-paiement').value = '';
+document.getElementById('f-compte').value = '';
+document.getElementById('f-date-commande').value = '2026-07-30';
+document.getElementById('f-date-reception').value = '';
+sandbox.sauverAchat();
+const creation = ecritures.find((e) => e.type === 'add');
+verifie('Une ligne creee porte un proprietaire',
+  !!creation && creation.data.proprietaire === 'marie@gmail.com',
+  creation && creation.data.proprietaire);
+// Tracabilite : l'utilisateur REEL, pas l'impersonne.
+verifie('...et « creePar » nomme l\'utilisateur reel',
+  !!creation && creation.data.creePar === 'cyril.samson41@gmail.com',
+  creation && creation.data.creePar);
+
+// Modifier ne doit jamais reecrire le proprietaire.
+ecritures.length = 0;
+sandbox.idEnEdition = 'a1';
+sandbox.sauverAchat();
+const maj = ecritures.find((e) => e.type === 'update');
+verifie('Une modification ne touche pas au proprietaire',
+  !!maj && !('proprietaire' in maj.data), maj && Object.keys(maj.data).join(','));
+sandbox.idEnEdition = null;
+
+// Les regles publiees doivent dire ce que le client suppose.
+const blocAchats = fs.readFileSync(
+  path.join(RACINE, '..', 'Admin', 'firestore.rules'), 'utf8')
+  .split('match /achats/')[1].split('match /')[0];
+verifie('Les regles du hub cloisonnent les achats par proprietaire',
+  /resource\.data\.proprietaire == idAppelant\(\)/.test(blocAchats),
+  'le bloc match /achats ne filtre pas par proprietaire');
+verifie('...et interdisent de changer le proprietaire d\'une ligne',
+  /request\.resource\.data\.proprietaire == resource\.data\.proprietaire/.test(blocAchats));
+verifie('...et exigent un proprietaire a la creation',
+  /request\.resource\.data\.proprietaire == idAppelant\(\)/.test(blocAchats));
+// L'ancienne regle ouverte ne doit plus traîner.
+verifie('L\'ancien « read, write » global a disparu',
+  !/allow read, write: if aAcces\('achats'\)/.test(blocAchats));
+
+// Remise en etat pour la suite du fichier.
+sandbox.HUB.effectif = sandbox.HUB.membre;
+sandbox.HUB.impersonation = '';
+sandbox.proprietaireVu = 'cyril.samson41@gmail.com';
+
+// --- 12. Export --------------------------------------------------
+console.log('\n12. Export');
 sandbox.exporterJson();
 verifie('Un fichier est bien telecharge', telechargements.length === 1);
 const contenu = JSON.parse(blobs.get(telechargements[0].href).parts[0]);
