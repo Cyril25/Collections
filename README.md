@@ -49,8 +49,8 @@ verrait, on ne subit pas ses restrictions — donc ça ne sert pas à tester les
 
 ## Le grain : une ligne d'achat, pas un objet
 
-Un document = **une ligne d'achat** (« 3 exemplaires du n°42 payés 4 € pièce chez
-Untel le 12 mars »), pas un objet possédé. C'est ce qui permet de répondre aux
+Un document = **une ligne d'achat** (« 3 exemplaires de la fève n°42 payés 4 € pièce
+chez Untel le 12 mars »), pas un objet possédé. C'est ce qui permet de répondre aux
 quatre questions de départ sans avoir à construire d'inventaire :
 
 | La question | Ce qui y répond |
@@ -62,10 +62,15 @@ quatre questions de départ sans avoir à construire d'inventaire :
 | Qu'est-ce que j'ai en double ? | les lignes **reçues**, regroupées par article |
 
 **Les doublons sont déduits, jamais saisis.** Deux lignes reçues portant le même
-article donnent un doublon, et le surplus est valorisé au prix moyen payé. Le
-regroupement se fait sur une forme normalisée du nom (sans accents, sans casse,
-sans ponctuation) : sans ça, « Tintin - Objectif Lune » et « tintin objectif lune »
-compteraient pour deux articles et aucun doublon ne sortirait jamais.
+article donnent un doublon, et le surplus est valorisé au prix moyen payé.
+
+Le regroupement se fait sur **le nom de l'article**, jamais sur l'identifiant du
+document — chaque document a le sien, unique par construction, deux lignes n'ont donc
+jamais le même. Ce qui est comparé, c'est ce qui a été tapé dans le champ *Article*
+(« fève n°42 », « 2 € commémorative 2024 »), sous une forme normalisée : sans accents,
+sans casse, sans ponctuation. Sans cette normalisation, « Tintin - Objectif Lune » et
+« tintin objectif lune » compteraient pour deux articles et aucun doublon ne sortirait
+jamais.
 
 Le regroupement ignore volontairement la collection : une collection mal
 orthographiée sur une des deux lignes ferait disparaître le doublon, ce qui est
@@ -213,11 +218,25 @@ s'évaluent document par document : sans lui, chaque lecture d'un compte demande
 la création, et `proprietaire` est ensuite **immuable** — les règles interdisent de le
 réécrire, sinon un membre pourrait pousser une fiche chez quelqu'un d'autre.
 
-**Le superadmin lit tout, et c'est assumé.** Sans ça l'impersonation n'afficherait rien,
-et il lit de toute façon la base depuis la console Firebase. L'interface ne montre qu'un
-propriétaire à la fois — le sien par défaut, celui de la personne regardée sous
-impersonation — et l'affiche en clair sous le bandeau, pour que « il n'y a rien » et « il
-n'y a rien à moi » ne se confondent pas.
+**Le superadmin ne fait pas exception : il voit ses propres fiches.** C'est une règle de
+ce site, et pas du hub — la distinction est délibérée :
+
+| Écran | Ce que voit le superadmin | Pourquoi |
+|---|---|---|
+| `idees` (hub) | **Tout** | C'est lui qui lit les idées pour les mettre en place |
+| `fournisseurs`, `achats` | **Les siennes** | Ce sont des données personnelles, pas un bac commun |
+
+Ne pas généraliser « superadmin = voit tout » : ça vaut là où les données sont partagées,
+pas ici.
+
+La règle Firestore, elle, lui accorde bien la lecture complète — deux raisons, aucune
+contournable : sans ça l'impersonation n'afficherait rien, et il lit de toute façon la
+base depuis la console Firebase. **La seule porte dans l'interface est l'impersonation**,
+un geste explicite, signalé par un bandeau rayé permanent. En dehors de ça, l'écran ne
+montre jamais les fiches d'un autre.
+
+L'interface affiche en clair de qui elle montre les fiches, pour que « il n'y a rien » et
+« il n'y a rien à moi » ne se confondent pas.
 
 > **Les fiches créées avant ce cloisonnement n'ont pas de `proprietaire`.** Elles ne
 > correspondent à aucune requête filtrée et sont donc invisibles. Firestore ne sait pas
@@ -244,10 +263,12 @@ n'y a rien à moi » ne se confondent pas.
 > Deux points à trancher au moment de le faire, parce qu'ils touchent le sens des
 > chiffres et pas seulement les droits :
 >
-> - **Les doublons se calculent-ils par personne ou globalement ?** Le cloisonnement les
->   rend personnels par construction — deux membres possédant le même article ne verront
->   plus un doublon. C'est probablement ce qu'on veut, mais ça change la réponse à « qu'est-ce
->   que je peux revendre ? ».
+> - **Les doublons deviennent personnels par construction.** Aujourd'hui, si deux membres
+>   saisissent chacun une ligne reçue « fève n°42 », le regroupement par nom d'article les
+>   voit comme deux exemplaires du même article et signale un doublon revendable. Après
+>   cloisonnement, non : chacun n'en a qu'un chez lui. C'est cohérent avec « chacun sa
+>   collection », mais il faut le vouloir — ça change la réponse à « qu'est-ce que je peux
+>   revendre ? ».
 > - **Le bandeau de chiffres devient personnel** (« Dépensé », « À payer »…). S'il faut un
 >   total pour le foyer, il demandera une lecture que les règles refusent aux membres.
 
@@ -327,9 +348,11 @@ quelqu'un n'expose rien de ce qui existe déjà. Ce qui reste vrai pour chacun, 
 concentration sur **son** compte Google — la consigne des deux paragraphes ci-dessus vaut
 donc pour tout le monde, et pas seulement pour le propriétaire du hub.
 
-Le superadmin, lui, garde un accès de lecture à tout (règle et console). Ce n'est pas
-contournable et ce n'est pas caché : c'est écrit dans les règles, et l'interface affiche
-en clair de qui elle montre les fiches.
+Le superadmin, lui, garde un accès de lecture à tout par les règles et par la console. Ce
+n'est pas contournable, et ce n'est pas caché : c'est écrit dans les règles, l'interface ne
+lui montre que ses propres fiches par défaut, et la seule façon d'en voir d'autres est
+l'impersonation — un geste explicite, sous bandeau rayé. **À dire aux membres** : ce n'est
+pas un coffre-fort dont on serait seul à avoir la clé.
 
 Ce que le code fait quand même, et qui n'est pas rien :
 
