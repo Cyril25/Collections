@@ -10,30 +10,35 @@ Ce site partage **le même projet Firebase et le même annuaire `membres`** que 
 [hub admin](https://github.com/Cyril25/Admin). Il n'a donc ni liste d'emails, ni page de
 gestion des membres : il lit la fiche de la personne connectée et obéit.
 
-Les deux droits qu'il consomme portent les mêmes slugs partout — dans `membres.projets`,
-dans `firestore.rules` et dans le `projets.js` des deux dépôts :
+**Un seul droit pour tout le site** : la case « Collections » de la fiche membre, c'est-à-dire
+`collections` dans `membres.sites`. Pas de droit par page.
 
-| Slug | Page | Ce que le droit ouvre | Portée |
-|---|---|---|---|
-| `achats` | `index.html` | Le suivi des achats | **Cloisonné** — chacun ne voit que ses propres lignes |
-| `fournisseurs` | `comptes.html` | Fournisseurs et identifiants | **Cloisonné** — chacun ne voit que ses propres fiches |
+| Fichier de référence | Ce qu'il contient |
+|---|---|
+| `sites.js` (dépôt Admin) | L'entrée `collections`, marquée `protege: true` |
+| `firestore.rules` (dépôt Admin) | `aAccesSite('collections')` sur les deux collections |
+| `auth.js` (ici) | `SITE_SLUG = 'collections'` — le même slug, vérifié par les tests |
 
-Les deux sont cloisonnés par `proprietaire` : cocher une case ouvre **une page**, jamais
-les données de quelqu'un d'autre.
+**Donner l'accès se fait sur la page Membres du hub**, en cochant « Collections » dans la
+liste des sites. C'est le seul endroit qui écrit dans `membres.sites`, et c'est voulu : un
+droit qui se donnerait depuis deux écrans finirait par diverger.
 
-**Donner un accès se fait sur la page Membres du hub**, en cochant la case du projet.
-C'est le seul endroit qui écrit dans `membres.projets`, et c'est voulu : un droit qui se
-donnerait depuis deux écrans finirait par diverger.
+Pourquoi un seul droit et pas un par page : parce que **les deux collections sont
+cloisonnées par `proprietaire`**. Chacun n'y voit que ses propres données, donc un découpage
+plus fin n'aurait rien protégé de plus — il aurait juste multiplié les cases pour un même
+site.
 
-Les deux droits n'ont pas la même portée, et c'est la différence qui compte : cocher
-`fournisseurs` ouvre **la page**, pas les comptes des autres. Voir « Chacun chez soi »
-plus bas.
+> ⚠ **Ce site est le premier à rendre `membres.sites` porteur de sécurité.** Le hub
+> documentait ces cases comme du pur confort d'affichage, sans aucune règle Firestore
+> derrière. Ce n'est plus vrai de celle-ci. Le hub le signale maintenant par un cadenas sur
+> la case, et son texte d'aide a été corrigé.
 
-Un membre qui a des droits sur le hub mais aucun ici voit un message qui l'explique, pas
-une page blanche. L'accueil de ce site **est** une page à droits (`achats`), donc la
-garde ne renvoie jamais vers lui aveuglément : elle va vers la première page permise, ou
-affiche le refus s'il n'y en a aucune. Rediriger sans cette précaution produirait une
-boucle infinie que rien ne signalerait — l'onglet tournerait, sans erreur.
+Un membre du hub sans cette case est **renvoyé à l'écran de connexion avec l'explication**
+— « ce compte est bien membre, mais le site Collections ne lui est pas ouvert » — plutôt
+que laissé devant une page vide qu'il prendrait pour une panne. Il n'y a pas d'accès partiel
+ici : c'est tout ou rien, ce qui supprime au passage tout risque de boucle de redirection
+(l'accueil de ce site étant lui-même une page de données, un renvoi vers lui pour cause de
+droit manquant se serait rappelé à l'infini).
 
 ### Impersonation
 
@@ -204,8 +209,8 @@ l'utilisateur **réel**) et les horodatages.
 ### Chacun chez soi
 
 `proprietaire` est ce qui rend la page utilisable à plusieurs : les règles Firestore ne
-laissent voir que ses propres fiches, et le droit `fournisseurs` ouvre donc la page, pas
-les identifiants des autres.
+laissent voir que ses propres fiches, et la case « Collections » ouvre donc **le site**,
+pas les données des autres.
 
 Trois conséquences qui ne se devinent pas :
 
@@ -377,8 +382,8 @@ un seul jeu de règles.
 | Fichier | Rôle |
 |---|---|
 | `config.js` | Config Firebase (la même que le hub) et adresse du propriétaire |
-| `projets.js` | Registre des pages — source du menu et de la garde |
-| `auth.js` | Le vigile : droits, garde, en-tête, impersonation |
+| `pages.js` | Registre des pages — **le menu, pas les droits** |
+| `auth.js` | Le vigile : droit d'entrée, en-tête, impersonation |
 | `hub-utils.js` | `toDate`, `formatDateFr`, `escapeAttr`, `jsAttr` — copie du hub |
 | `login.html` | Page de connexion Google |
 | `index.html` / `achats.js` | Le suivi des achats — la page d'accueil |
@@ -398,7 +403,7 @@ sans regarder :
 
 | Fichier | Ce qui diffère du hub |
 |---|---|
-| `auth.js` | Pas de page Membres (les accès se donnent dans le hub) ; sélecteur d'impersonation dans l'en-tête ; garde sans redirection en boucle ; site à plat, pas de `data-racine` |
+| `auth.js` | Pas de page Membres (les accès se donnent dans le hub) ; sélecteur d'impersonation dans l'en-tête ; un seul droit pour tout le site, donc pas de garde par page ni de menu à filtrer ; site à plat, pas de `data-racine` |
 | `style.css` | Les classes `.idee-*` renommées en `.data-table`, `.cell-*`, `.ligne--terne` — ce site n'a pas de page « idées » |
 
 ### ⚠ Règle Firestore à publier — sinon la page reste vide

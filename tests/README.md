@@ -10,22 +10,29 @@ d'étape de build.
 
 | Fichier | Ce qu'il protège |
 |---|---|
-| `test-acces.js` | Droits, garde des pages, impersonation, et cohérence des slugs avec le hub |
+| `test-acces.js` | Droit d'entrée, impersonation, et cohérence du slug de site avec le hub |
 | `test-achats.js` | Le suivi des achats : montants, statuts, retard, doublons, dates, échappement, export |
 | `test-comptes.js` | Fournisseurs et comptes : assainissement des URL, non-fuite des mots de passe, révélation, copie, ordre, recherche, export |
 
-### `test-acces.js` — la boucle de redirection, surtout
+### `test-acces.js` — le slug de site, surtout
 
-**L'accueil de ce site est une page à droits** (`achats`), contrairement à celui du hub.
-Rediriger vers `index.html` quand la garde échoue enverrait quelqu'un sans droit `achats`
-sur une page qui le renvoie sur elle-même, indéfiniment. **Rien n'échouerait** : l'onglet
-tournerait, sans erreur ni message. Trois assertions couvrent ce cas, dont celle où la
-personne n'a aucun droit du tout.
+**La cohérence d'un seul mot entre trois fichiers de deux dépôts** : `SITE_SLUG` dans
+`auth.js` d'ici, l'entrée de `sites.js` du hub, et l'argument de `aAccesSite()` dans
+`firestore.rules`. Un slug qui diverge donne un site ouvert à personne — ou, selon l'endroit
+où il diverge, une case qui semble cochée sans rien ouvrir. Dans les deux cas ça se
+diagnostique mal, puisque tout *semble* configuré. Les assertions relisent les vrais
+fichiers du dépôt Admin.
 
-Ensuite, la **cohérence des slugs** entre trois fichiers de deux dépôts : `projets.js`
-d'ici, `firestore.rules` et `projets.js` du hub. Un slug qui diverge donne soit une page
-inaccessible à tous, soit une case à cocher qui n'ouvre rien — et dans les deux cas ça se
-diagnostique mal, puisque tout *semble* configuré.
+Le test vérifie aussi que **l'ancien modèle ne traîne plus** : plus de `aAcces('achats')` ni
+de `aAcces('fournisseurs')` dans les règles, plus d'entrée correspondante dans le registre
+des projets du hub, et plus de `aAcces()` ni de `projetsVisibles()` dans le vigile — les
+laisser ferait croire à un filtrage par page qui n'existe plus.
+
+**Le refus est explicite.** Un membre du hub sans la case Collections doit voir « ce compte
+est bien membre, mais le site ne lui est pas ouvert », et non le message générique du
+non-membre : sans cette distinction, il croit son compte inconnu et redemande une
+inscription. Une fiche d'avant l'existence de `membres.sites` — champ absent — ne doit pas
+ouvrir l'accès par accident.
 
 Enfin, le garde-fou de l'impersonation : `estSuperadminReel()` ne doit **jamais** suivre
 la fiche impersonnée. Sinon on pourrait se croire — et se comporter comme — superadmin en

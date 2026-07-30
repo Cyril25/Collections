@@ -2,17 +2,23 @@
 // auth.js — Le vigile de collections.ofildudoubs.fr
 // ============================================================
 // Adapté de celui du hub admin, dont il partage la collection
-// « membres » : MEME projet Firebase, MEME annuaire, MEMES slugs de
-// droits. Ce site ne gère donc aucun droit lui-même — il lit la fiche
-// de la personne connectée et obéit.
+// « membres » : MEME projet Firebase, MEME annuaire. Ce site ne gère
+// aucun droit lui-même — il lit la fiche de la personne connectée et
+// obéit.
+//
+// L'ACCÈS SE DONNE AU NIVEAU DU SITE, pas page par page : une seule case
+// à cocher sur la fiche membre du hub, « Collections » dans
+// `membres.sites`. Qui entre voit donc toutes les pages, et n'y voit que
+// ses propres données puisque les deux collections Firestore sont
+// cloisonnées par `proprietaire`.
 //
 // Sur chaque page :
 //   1. init Firebase
-//   2. pas connecté           → redirection vers login
-//   3. connecté               → lecture de sa fiche dans « membres »
-//   4. pas membre / inactif   → déconnexion immédiate
-//   5. membre                 → en-tête filtrée par ses droits, garde
-//                               de la page, puis affichage
+//   2. pas connecté             → redirection vers login
+//   3. connecté                 → lecture de sa fiche dans « membres »
+//   4. pas membre / inactif     → déconnexion immédiate
+//   5. pas d'accès à CE site    → renvoi au login, avec l'explication
+//   6. accès                    → en-tête, puis affichage
 //
 // ⚠ CE QUE CE FICHIER NE FAIT PAS : cacher des pages. Le site est
 // statique et le dépôt public — n'importe qui peut télécharger
@@ -27,7 +33,13 @@
 //   - l'impersonation se déclenche depuis un sélecteur de l'en-tête,
 //     puisqu'il n'y a pas de page Membres pour l'amorcer.
 //   - site à plat : pas de data-racine, tout est à la racine.
+//   - un seul droit pour tout le site, donc pas de garde par page et pas
+//     de menu à filtrer.
 // ============================================================
+
+// La clé du droit, dans membres.sites. Doit être identique au slug de
+// sites.js du hub et à l'argument de aAccesSite() dans firestore.rules.
+var SITE_SLUG = 'collections';
 
 var HUB_CONFIG_OK = (typeof FIREBASE_CONFIG !== 'undefined' && FIREBASE_CONFIG.apiKey.indexOf('A_REMPLACER') === -1);
 
@@ -56,10 +68,6 @@ if (typeof firebase === 'undefined') {
 function estPageLogin() {
     var page = window.location.pathname.split('/').pop();
     return (page === 'login.html' || page === 'login');
-}
-
-function pageCourante() {
-    return window.location.pathname.split('/').pop() || 'index.html';
 }
 
 function normaliserEmail(email) {
@@ -110,21 +118,21 @@ function estSuperadmin() {
     return !!(HUB.effectif && HUB.effectif.role === 'superadmin');
 }
 
-function aAcces(slug) {
-    if (!HUB.effectif) return false;
-    if (HUB.effectif.role === 'superadmin') return true;
-    var liste = HUB.effectif.projets || [];
-    return liste.indexOf(slug) !== -1;
-}
-
-function projetsVisibles() {
-    return PROJETS.filter(function(p) { return aAcces(p.slug); });
+// Le seul droit qui compte ici : la case « Collections » de la fiche
+// membre. Un seul accès pour tout le site, ce qui n'ouvre pourtant les
+// données de personne d'autre — les deux collections sont cloisonnées par
+// `proprietaire`.
+function aAccesSite(fiche) {
+    var cible = fiche || HUB.effectif;
+    if (!cible) return false;
+    if (cible.role === 'superadmin') return true;
+    var liste = cible.sites || [];
+    return liste.indexOf(SITE_SLUG) !== -1;
 }
 
 window.estSuperadminReel = estSuperadminReel;
 window.estSuperadmin = estSuperadmin;
-window.aAcces = aAcces;
-window.projetsVisibles = projetsVisibles;
+window.aAccesSite = aAccesSite;
 
 // ------------------------------------------------------------
 // 4. Impersonation
@@ -189,12 +197,14 @@ function remplirSelecteurVue() {
         snapshot.forEach(function(doc) {
             if (doc.id === moi) return;
             var fiche = doc.data();
-            var droits = (fiche.role === 'superadmin')
-                ? 'tout'
-                : nombreDeDroits(fiche) + ' accès';
+            // On dit tout de suite si la personne a accès à CE site : sinon
+            // on l'impersonne pour découvrir un écran de refus.
+            var etat = (fiche.role === 'superadmin')
+                ? 'superadmin'
+                : (aAccesSite(fiche) ? 'a accès' : 'sans accès');
             options.push('<option value="' + escapeValeurAttribut(doc.id) + '"'
                 + (doc.id === HUB.impersonation ? ' selected' : '') + '>'
-                + escapeHtml((fiche.nom || doc.id) + ' — ' + droits) + '</option>');
+                + escapeHtml((fiche.nom || doc.id) + ' — ' + etat) + '</option>');
         });
         // Personne d'autre dans l'annuaire : un sélecteur à une seule
         // entrée n'apprend rien, on le retire.
@@ -210,17 +220,6 @@ function remplirSelecteurVue() {
     });
 }
 
-// Compte les droits qui concernent CE site, pas ceux du hub : c'est la
-// seule information utile ici.
-function nombreDeDroits(fiche) {
-    var liste = fiche.projets || [];
-    var total = 0;
-    PROJETS.forEach(function(p) {
-        if (liste.indexOf(p.slug) !== -1) total++;
-    });
-    return total;
-}
-
 // ------------------------------------------------------------
 // 5. En-tête
 // ------------------------------------------------------------
@@ -228,10 +227,12 @@ function injecterHeader() {
     var cible = document.getElementById('header-placeholder');
     if (!cible) return;
 
-    var projetCourant = (document.body && document.body.getAttribute('data-projet')) || '';
+    // Le menu n'est plus filtré : l'accès est global au site. `data-page`
+    // ne sert plus qu'à savoir quel lien souligner.
+    var pageActive = (document.body && document.body.getAttribute('data-page')) || '';
 
-    var liens = projetsVisibles().map(function(p) {
-        var actif = (p.slug === projetCourant) ? ' class="active"' : '';
+    var liens = PAGES.map(function(p) {
+        var actif = (p.cle === pageActive) ? ' class="active"' : '';
         return '<a href="' + p.url + '"' + actif + '><i class="' + p.icone + '"></i> ' + escapeHtml(p.nom) + '</a>';
     }).join('');
 
@@ -324,6 +325,14 @@ document.addEventListener('DOMContentLoaded', function() {
                     console.warn('Accès refusé : compte désactivé (' + user.email + ').');
                     return refuser('disabled');
                 }
+                // Membre du hub, mais pas de ce site. On le renvoie au
+                // login avec l'explication plutôt que de lui afficher une
+                // page vide : il n'y a rien de partiel ici, c'est tout ou
+                // rien.
+                if (!aAccesSite(fiche) && !estProprietaire) {
+                    console.warn('Accès refusé : ' + user.email + ' n\'a pas le site Collections.');
+                    return refuser('nosite');
+                }
 
                 HUB.membre = fiche;
 
@@ -364,50 +373,16 @@ function demarrerPage(surLogin) {
         return;
     }
 
-    // Garde de la page. Contrairement au hub, l'accueil de ce site EST
-    // une page à droits (« achats ») : rediriger aveuglément vers
-    // index.html bouclerait à l'infini pour qui n'y a pas accès. On
-    // renvoie donc vers la première page permise, et s'il n'y en a
-    // aucune, on l'explique au lieu de rediriger.
-    var projet = (document.body && document.body.getAttribute('data-projet')) || '';
-    if (projet && !aAcces(projet)) {
-        var repli = projetsVisibles()[0];
-        if (repli && repli.url !== pageCourante()) {
-            window.location.href = repli.url;
-            return;
-        }
-        injecterBandeauImpersonation();
-        injecterHeader();
-        afficherRefus(projet);
-        return;
-    }
-
+    // Plus de garde par page : le droit est global au site et a déjà été
+    // vérifié avant d'arriver ici. C'est ce qui supprime au passage tout
+    // risque de boucle de redirection — l'accueil de ce site étant
+    // lui-même une page de données, un renvoi vers index.html pour cause
+    // de droit manquant se serait rappelé à l'infini.
     injecterBandeauImpersonation();
     injecterHeader();
     var contenu = document.getElementById('app-content');
     if (contenu) contenu.style.display = 'block';
     if (typeof onHubReady === 'function') onHubReady(HUB);
-}
-
-// Aucun accès sur ce site : on le dit, avec de quoi agir. Une page
-// blanche laisserait croire à une panne.
-function afficherRefus(projet) {
-    var contenu = document.getElementById('app-content');
-    if (!contenu) return;
-    var def = (typeof getProjet === 'function') ? getProjet(projet) : null;
-    var qui = HUB.impersonation
-        ? escapeHtml(HUB.impersonation) + ' n\'a pas'
-        : 'Vous n\'avez pas';
-    contenu.style.display = 'block';
-    contenu.innerHTML = '<div class="empty-state">'
-        + '<i class="fa-solid fa-lock"></i>'
-        + '<p><strong>' + qui + ' accès à cette page.</strong><br>'
-        + escapeHtml(def ? def.nom : projet) + ' demande un droit qui se donne depuis la page '
-        + 'Membres du hub.</p>'
-        + (estSuperadminReel()
-            ? '<p style="margin-top:20px"><a href="https://admin.ofildudoubs.fr/membres.html">Gérer les accès</a></p>'
-            : '')
-        + '</div>';
 }
 
 function afficherErreurTechnique(erreur) {
@@ -427,9 +402,15 @@ function afficherErreurLogin() {
     if (!motif) return;
     var bloc = document.getElementById('login-error');
     if (!bloc) return;
-    bloc.textContent = (motif === 'disabled')
-        ? 'Ce compte a été désactivé.'
-        : 'Ce compte Google n\'a pas accès à ce site.';
+    // « nosite » se distingue de « unauthorized » : la personne est bien
+    // membre du hub, il ne lui manque que la case Collections. Dire
+    // laquelle évite un aller-retour pour comprendre.
+    var messages = {
+        disabled: 'Ce compte a été désactivé.',
+        nosite: 'Ce compte est bien membre, mais le site Collections ne lui est pas ouvert. '
+              + 'La case « Collections » se coche sur sa fiche, page Membres du hub.'
+    };
+    bloc.textContent = messages[motif] || 'Ce compte Google n\'a pas accès à ce site.';
     bloc.style.display = 'block';
 }
 
