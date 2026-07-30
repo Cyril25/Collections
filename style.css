@@ -849,6 +849,54 @@ body.login-page {
 }
 .alerte-doublon i { margin-right: 6px; }
 
+/* ---------- 11b. Impersonation ---------- */
+/* Raye et impossible a manquer : on doit savoir en permanence qu'on
+   regarde le site avec les yeux de quelqu'un d'autre. Copie conforme du
+   bandeau du hub, pour que le meme etat ait le meme aspect sur les deux
+   sites. */
+.impersonation-bar {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--spacing-md);
+    flex-wrap: wrap;
+    padding: 8px var(--spacing-md);
+    background: repeating-linear-gradient(45deg, #7A5200, #7A5200 18px, #8D6708 18px, #8D6708 36px);
+    color: #fff;
+    font-size: 0.85rem;
+    text-align: center;
+}
+.impersonation-bar strong { font-weight: 700; }
+.impersonation-bar button {
+    padding: 4px 12px;
+    background: #fff;
+    color: #7A5200;
+    border: none;
+    border-radius: var(--radius-sm);
+    font-family: inherit;
+    font-size: 0.82rem;
+    font-weight: 500;
+    cursor: pointer;
+    white-space: nowrap;
+}
+.impersonation-bar button:hover { opacity: 0.88; }
+
+/* Le selecteur de vue, dans l'en-tete. Il remplace la page Membres du
+   hub, absente ici : les acces se donnent la-bas, on ne fait que les
+   regarder a l'oeuvre. */
+.hub-vue {
+    max-width: 190px;
+    padding: 4px 8px;
+    border: 1px solid rgba(255, 255, 255, 0.35);
+    border-radius: var(--radius-sm);
+    background: rgba(255, 255, 255, 0.12);
+    color: #fff;
+    font-family: inherit;
+    font-size: 0.78rem;
+    cursor: pointer;
+}
+.hub-vue option { color: var(--color-text); }
+
 /* ---------- 12. Comptes fournisseurs ---------- */
 
 /* Bandeau d'avertissement en tete de la page Comptes. Volontairement

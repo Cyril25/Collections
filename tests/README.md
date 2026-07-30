@@ -10,8 +10,26 @@ d'étape de build.
 
 | Fichier | Ce qu'il protège |
 |---|---|
+| `test-acces.js` | Droits, garde des pages, impersonation, et cohérence des slugs avec le hub |
 | `test-achats.js` | Le suivi des achats : montants, statuts, retard, doublons, dates, échappement, export |
-| `test-comptes.js` | Fournisseurs et comptes : assainissement des URL, non-fuite des mots de passe, révélation, copie, recherche, export |
+| `test-comptes.js` | Fournisseurs et comptes : assainissement des URL, non-fuite des mots de passe, révélation, copie, ordre, recherche, export |
+
+### `test-acces.js` — la boucle de redirection, surtout
+
+**L'accueil de ce site est une page à droits** (`achats`), contrairement à celui du hub.
+Rediriger vers `index.html` quand la garde échoue enverrait quelqu'un sans droit `achats`
+sur une page qui le renvoie sur elle-même, indéfiniment. **Rien n'échouerait** : l'onglet
+tournerait, sans erreur ni message. Trois assertions couvrent ce cas, dont celle où la
+personne n'a aucun droit du tout.
+
+Ensuite, la **cohérence des slugs** entre trois fichiers de deux dépôts : `projets.js`
+d'ici, `firestore.rules` et `projets.js` du hub. Un slug qui diverge donne soit une page
+inaccessible à tous, soit une case à cocher qui n'ouvre rien — et dans les deux cas ça se
+diagnostique mal, puisque tout *semble* configuré.
+
+Enfin, le garde-fou de l'impersonation : `estSuperadminReel()` ne doit **jamais** suivre
+la fiche impersonnée. Sinon on pourrait se croire — et se comporter comme — superadmin en
+regardant à travers les yeux d'un superadmin.
 
 ### `test-comptes.js` — deux choses le justifient à elles seules
 

@@ -1,9 +1,51 @@
 # Collections — `collections.ofildudoubs.fr`
 
 Suivi des **achats** de collection : ce qui est commandé, ce qui est attendu, ce
-qui a été dépensé, et ce qui traîne en double et pourrait se revendre.
+qui a été dépensé, et ce qui traîne en double et pourrait se revendre. Plus un carnet
+des **comptes fournisseurs**.
 
-Accès réservé à **cyril.samson41@gmail.com**.
+## Les accès viennent du hub, ils ne se créent pas ici
+
+Ce site partage **le même projet Firebase et le même annuaire `membres`** que le
+[hub admin](https://github.com/Cyril25/Admin). Il n'a donc ni liste d'emails, ni page de
+gestion des membres : il lit la fiche de la personne connectée et obéit.
+
+Les deux droits qu'il consomme portent les mêmes slugs partout — dans `membres.projets`,
+dans `firestore.rules` et dans le `projets.js` des deux dépôts :
+
+| Slug | Page | Ce que le droit ouvre |
+|---|---|---|
+| `achats` | `index.html` | Le suivi des achats |
+| `fournisseurs` | `comptes.html` | Les fournisseurs et **tous les mots de passe** |
+
+**Donner un accès se fait sur la page Membres du hub**, en cochant la case du projet.
+C'est le seul endroit qui écrit dans `membres.projets`, et c'est voulu : un droit qui se
+donnerait depuis deux écrans finirait par diverger.
+
+> ⚠ **`fournisseurs` n'a pas de demi-mesure.** Cocher cette case donne à la personne
+> tous les identifiants enregistrés, en clair. Voir « Mots de passe : le risque assumé »
+> plus bas — ce risque change de nature dès qu'on n'est plus seul.
+
+Un membre qui a des droits sur le hub mais aucun ici voit un message qui l'explique, pas
+une page blanche. L'accueil de ce site **est** une page à droits (`achats`), donc la
+garde ne renvoie jamais vers lui aveuglément : elle va vers la première page permise, ou
+affiche le refus s'il n'y en a aucune. Rediriger sans cette précaution produirait une
+boucle infinie que rien ne signalerait — l'onglet tournerait, sans erreur.
+
+### Impersonation
+
+Le sélecteur en haut à droite (superadmin uniquement) affiche le site tel que le voit la
+personne choisie : menu, garde des pages et refus suivent ses droits. Un bandeau rayé le
+rappelle en permanence, et ça meurt avec l'onglet (`sessionStorage`).
+
+Il y a un sélecteur **ici en plus de celui du hub** parce que le `sessionStorage` est
+cloisonné par origine : impersonner quelqu'un sur `admin.ofildudoubs.fr` ne change rien
+sur `collections.ofildudoubs.fr`.
+
+**C'est un aperçu d'interface, pas un bac à sable.** Les requêtes partent toujours avec
+le jeton du superadmin : Firestore continue de tout autoriser. On voit ce que l'autre
+verrait, on ne subit pas ses restrictions — donc ça ne sert pas à tester les règles. Pour
+ça, le *Rules Playground* de la console Firebase.
 
 ## Le grain : une ligne d'achat, pas un objet
 
@@ -216,6 +258,14 @@ coûte, pour pouvoir le refaire en connaissance de cause :
 **Ce qu'on n'y met pas** : rien qui déplace de l'argent directement (banque, PayPal,
 carte) ni un mot de passe réutilisé ailleurs. Un bandeau le rappelle en haut de la page.
 
+> ⚠ **À plusieurs, le calcul change.** Le raisonnement ci-dessus tenait pour une
+> personne seule sur son propre compte. Chaque membre à qui on coche `fournisseurs`
+> devient un détenteur de plus de la totalité des identifiants, avec son propre compte
+> Google et sa propre hygiène de sécurité. Il n'y a **aucun accès partiel possible** :
+> la règle Firestore porte sur la collection, pas sur un fournisseur. Si un jour il faut
+> ouvrir les achats à quelqu'un sans lui ouvrir les mots de passe, c'est exactement ce
+> que fait le découpage en deux droits — ne cocher que `achats`.
+
 Ce que le code fait quand même, et qui n'est pas rien :
 
 | Mesure | Ce que ça protège |
@@ -243,8 +293,9 @@ un seul jeu de règles.
 
 | Fichier | Rôle |
 |---|---|
-| `config.js` | Config Firebase (la même que le hub), emails autorisés, navigation |
-| `auth.js` | Le vigile — copie de celui du hub |
+| `config.js` | Config Firebase (la même que le hub) et adresse du propriétaire |
+| `projets.js` | Registre des pages — source du menu et de la garde |
+| `auth.js` | Le vigile : droits, garde, en-tête, impersonation |
 | `hub-utils.js` | `toDate`, `formatDateFr`, `escapeAttr`, `jsAttr` — copie du hub |
 | `login.html` | Page de connexion Google |
 | `index.html` / `achats.js` | Le suivi des achats — la page d'accueil |
@@ -257,11 +308,15 @@ Le suivi des achats **est** l'accueil : une seule page, pas de clic inutile. Qua
 l'inventaire arrivera, il prendra sa place dans `NAV_LINKS` et l'accueil redeviendra
 une page à part entière.
 
-`auth.js`, `hub-utils.js` et `style.css` sont des copies du hub — deux copies
-coûtent moins cher qu'un mécanisme de partage sur une stack sans build. `style.css`
-a en revanche déjà divergé : les classes `.idee-*` y ont été renommées en
-`.data-table`, `.cell-*`, `.ligne--terne`, ce site n'ayant pas de page « idées ».
-Ne pas reporter bêtement une correction du hub sur ce fichier sans regarder.
+`hub-utils.js` est une copie conforme du hub. `auth.js` et `style.css` en sont dérivés
+mais **ont divergé volontairement** — deux copies coûtent moins cher qu'un mécanisme de
+partage sur une stack sans build, mais il ne faut plus y reporter une correction du hub
+sans regarder :
+
+| Fichier | Ce qui diffère du hub |
+|---|---|
+| `auth.js` | Pas de page Membres (les accès se donnent dans le hub) ; sélecteur d'impersonation dans l'en-tête ; garde sans redirection en boucle ; site à plat, pas de `data-racine` |
+| `style.css` | Les classes `.idee-*` renommées en `.data-table`, `.cell-*`, `.ligne--terne` — ce site n'a pas de page « idées » |
 
 ### ⚠ Règle Firestore à publier — sinon la page reste vide
 

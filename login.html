@@ -17,7 +17,7 @@
     <div class="login-card">
         <i class="fa-solid fa-boxes-stacked logo-icon"></i>
         <h1>Collections</h1>
-        <p>Espace privé. Identifiez-vous avec le compte Google autorisé.</p>
+        <p>Espace privé. Identifiez-vous avec votre compte Google.</p>
 
         <button type="button" id="btn-google-login" class="btn-google" onclick="loginWithGoogle()">
             <i class="fa-brands fa-google"></i> Se connecter avec Google
@@ -34,7 +34,11 @@
 
     <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js" integrity="sha384-v3Z/Xdw1sCeo6M/geW7sn1Lt9obIm7MhAk8laVV+rvYFmzuWDELOiygx7dVte2dX" crossorigin="anonymous"></script>
     <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-auth.js" integrity="sha384-p62xBRve8PdqGDGASZtZMuHgPsyPcT5VsFwgmz2p4zaFdEtt5ZzNqxK+CLzQS7xP" crossorigin="anonymous"></script>
+    <!-- Firestore est nécessaire dès le login : le vigile lit la fiche
+         « membres » pour décider qui entre. -->
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-firestore.js" integrity="sha384-3LctmFHtNDZwkVOSZ0fvJZJD9XR5Og5ol/MVEfNt36gUUnSYBRJN0iFjIMbFecOg" crossorigin="anonymous"></script>
     <script src="config.js"></script>
+    <script src="projets.js"></script>
     <script src="auth.js"></script>
 </body>
 </html>

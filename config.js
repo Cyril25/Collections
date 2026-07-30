@@ -20,17 +20,23 @@ var FIREBASE_CONFIG = {
     // measurementId omis : Analytics n'est pas charge sur ce site.
 };
 
-// --- 2. Qui a le droit d'entrer ------------------------------
-var ALLOWED_EMAILS = ['cyril.samson41@gmail.com'];
+// --- 2. Le proprietaire --------------------------------------
+// Superadmin par son adresse, quoi qu'il arrive a la collection membres.
+// C'est le filet anti-verrouillage : sans lui, supprimer sa propre fiche
+// par erreur fermerait la base definitivement.
+// DOIT etre identique a proprietaire() dans firestore.rules (depot Admin)
+// et a SUPERADMIN_EMAIL du hub.
+var SUPERADMIN_EMAIL = 'cyril.samson41@gmail.com';
+
+// Il n'y a plus de liste d'emails ici. Les acces vivent dans la
+// collection Firestore « membres » — LA MEME que celle du hub admin —
+// et se donnent depuis la page Membres du hub. Ce site ne fait que lire
+// cet annuaire et obeir : aucun droit ne se cree ici.
 
 // --- 3. Identite du site -------------------------------------
 var SITE_TITLE = 'Collections';
 var SITE_ICON  = 'fa-solid fa-boxes-stacked';
 
 // --- 4. Navigation -------------------------------------------
-// Le suivi des achats EST l'accueil. Quand l'inventaire arrivera, il
-// prendra sa place ici et l'accueil redeviendra une page a part entiere.
-var NAV_LINKS = [
-    { href: 'index.html',  icon: 'fa-solid fa-cart-shopping', label: 'Achats' },
-    { href: 'comptes.html', icon: 'fa-solid fa-key',          label: 'Comptes' }
-];
+// Le menu n'est plus une liste fixe : il sort de projets.js, filtre par
+// les droits de la personne connectee.
