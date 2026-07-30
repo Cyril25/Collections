@@ -29,10 +29,7 @@ var PROJETS = [
         nom: 'Comptes',
         icone: 'fa-solid fa-key',
         url: 'comptes.html',
-        // Dit noir sur blanc dans le registre : c'est ici qu'on decide de
-        // cocher la case, autant que la consequence soit ecrite au meme
-        // endroit que le droit.
-        description: 'Fournisseurs et identifiants. ⚠ Ce droit donne acces a TOUS les mots de passe.'
+        description: 'Vos fournisseurs et vos identifiants. Chacun ne voit que ses propres fiches.'
     }
 ];
 

@@ -13,18 +13,18 @@ gestion des membres : il lit la fiche de la personne connectée et obéit.
 Les deux droits qu'il consomme portent les mêmes slugs partout — dans `membres.projets`,
 dans `firestore.rules` et dans le `projets.js` des deux dépôts :
 
-| Slug | Page | Ce que le droit ouvre |
-|---|---|---|
-| `achats` | `index.html` | Le suivi des achats |
-| `fournisseurs` | `comptes.html` | Les fournisseurs et **tous les mots de passe** |
+| Slug | Page | Ce que le droit ouvre | Portée |
+|---|---|---|---|
+| `achats` | `index.html` | Le suivi des achats | **Commun** — tout le monde voit les mêmes lignes |
+| `fournisseurs` | `comptes.html` | Fournisseurs et identifiants | **Cloisonné** — chacun ne voit que ses propres fiches |
 
 **Donner un accès se fait sur la page Membres du hub**, en cochant la case du projet.
 C'est le seul endroit qui écrit dans `membres.projets`, et c'est voulu : un droit qui se
 donnerait depuis deux écrans finirait par diverger.
 
-> ⚠ **`fournisseurs` n'a pas de demi-mesure.** Cocher cette case donne à la personne
-> tous les identifiants enregistrés, en clair. Voir « Mots de passe : le risque assumé »
-> plus bas — ce risque change de nature dès qu'on n'est plus seul.
+Les deux droits n'ont pas la même portée, et c'est la différence qui compte : cocher
+`fournisseurs` ouvre **la page**, pas les comptes des autres. Voir « Chacun chez soi »
+plus bas.
 
 Un membre qui a des droits sur le hub mais aucun ici voit un message qui l'explique, pas
 une page blanche. L'accueil de ce site **est** une page à droits (`achats`), donc la
@@ -188,6 +188,49 @@ pris que le projet Extérieur du hub :
 | `fournisseur` | `nom` (obligatoire), `cle` (nom normalisé), `site`, `notes` |
 | `compte` | `fournisseurId`, `libelle`, `email` (obligatoire), `identifiant`, `motDePasse`, `telephone`, `modePaiement`, `destinataire`, `rue`, `codePostal`, `ville`, `principal`, `ordre`, `notes` |
 
+Les deux types portent en plus `proprietaire` (email du détenteur), `creePar` (email de
+l'utilisateur **réel**) et les horodatages.
+
+### Chacun chez soi
+
+`proprietaire` est ce qui rend la page utilisable à plusieurs : les règles Firestore ne
+laissent voir que ses propres fiches, et le droit `fournisseurs` ouvre donc la page, pas
+les identifiants des autres.
+
+Trois conséquences qui ne se devinent pas :
+
+**La requête doit être filtrée, et ce n'est pas une optimisation.** Une règle Firestore
+n'est pas un filtre : le serveur rejette **en bloc** toute requête qui pourrait ramener un
+document interdit. La page interroge donc
+`where('proprietaire', '==', <son email>)`. Sans ce `where`, elle n'afficherait pas une
+liste partielle — elle serait entièrement vide, avec une erreur de permissions, alors que
+les données sont bien là. C'est le genre de panne qu'on met une heure à comprendre, d'où
+un test qui verrouille la présence du filtre.
+
+**Le champ est dupliqué sur les comptes**, pas seulement sur les fournisseurs. Les règles
+s'évaluent document par document : sans lui, chaque lecture d'un compte demanderait un
+`get()` sur son fournisseur parent. Le compte hérite du propriétaire de son fournisseur à
+la création, et `proprietaire` est ensuite **immuable** — les règles interdisent de le
+réécrire, sinon un membre pourrait pousser une fiche chez quelqu'un d'autre.
+
+**Le superadmin lit tout, et c'est assumé.** Sans ça l'impersonation n'afficherait rien,
+et il lit de toute façon la base depuis la console Firebase. L'interface ne montre qu'un
+propriétaire à la fois — le sien par défaut, celui de la personne regardée sous
+impersonation — et l'affiche en clair sous le bandeau, pour que « il n'y a rien » et « il
+n'y a rien à moi » ne se confondent pas.
+
+> **Les fiches créées avant ce cloisonnement n'ont pas de `proprietaire`.** Elles ne
+> correspondent à aucune requête filtrée et sont donc invisibles. Firestore ne sait pas
+> interroger l'*absence* d'un champ — `where('proprietaire', '==', null)` ne trouve que
+> les `null` explicites — il faut lire la collection entière, ce que seul le superadmin
+> peut faire. La page le fait une fois au chargement et propose un bouton
+> « Me les attribuer ». Le bandeau disparaît quand il n'y a plus rien à reprendre.
+
+**Les achats, eux, restent communs.** Deux personnes qui suivent la même collection ont
+besoin de voir les mêmes commandes. Si ça devait changer, le même champ `proprietaire`
+et le même `where` s'appliqueraient — mais c'est une décision de produit, pas une
+conséquence technique.
+
 Le `modePaiement` d'un compte porte **le même vocabulaire** que celui d'une ligne
 d'achat (« carte BNP », « PayPal ») : ici le moyen enregistré chez ce fournisseur, là
 celui qui a réellement réglé la commande. Les deux se suggèrent depuis les saisies
@@ -258,13 +301,15 @@ coûte, pour pouvoir le refaire en connaissance de cause :
 **Ce qu'on n'y met pas** : rien qui déplace de l'argent directement (banque, PayPal,
 carte) ni un mot de passe réutilisé ailleurs. Un bandeau le rappelle en haut de la page.
 
-> ⚠ **À plusieurs, le calcul change.** Le raisonnement ci-dessus tenait pour une
-> personne seule sur son propre compte. Chaque membre à qui on coche `fournisseurs`
-> devient un détenteur de plus de la totalité des identifiants, avec son propre compte
-> Google et sa propre hygiène de sécurité. Il n'y a **aucun accès partiel possible** :
-> la règle Firestore porte sur la collection, pas sur un fournisseur. Si un jour il faut
-> ouvrir les achats à quelqu'un sans lui ouvrir les mots de passe, c'est exactement ce
-> que fait le découpage en deux droits — ne cocher que `achats`.
+**À plusieurs, le risque ne s'additionne pas.** Grâce au cloisonnement par
+`proprietaire`, chaque membre ne détient que ses propres identifiants : ouvrir la page à
+quelqu'un n'expose rien de ce qui existe déjà. Ce qui reste vrai pour chacun, c'est la
+concentration sur **son** compte Google — la consigne des deux paragraphes ci-dessus vaut
+donc pour tout le monde, et pas seulement pour le propriétaire du hub.
+
+Le superadmin, lui, garde un accès de lecture à tout (règle et console). Ce n'est pas
+contournable et ce n'est pas caché : c'est écrit dans les règles, et l'interface affiche
+en clair de qui elle montre les fiches.
 
 Ce que le code fait quand même, et qui n'est pas rien :
 
@@ -333,10 +378,14 @@ match /fournisseurs/{document} {
 }
 ```
 
-Le second protège des mots de passe en clair : c'est la seule barrière entre eux et le
-reste d'Internet. Ne jamais l'élargir « pour dépanner », et garder en tête qu'accorder
-le projet `fournisseurs` à quelqu'un lui donne **tous** les identifiants — il n'y a pas
-de demi-accès.
+Le bloc `fournisseurs` est plus long que ça : il **cloisonne par `proprietaire`** (voir
+« Chacun chez soi »). C'est la seule barrière entre des mots de passe en clair et le reste
+d'Internet — ne jamais l'élargir « pour dépanner ».
+
+> ⚠ **Le cloisonnement est arrivé après une première version du bloc.** Si la version
+> publiée dans la console est l'ancienne (`allow read, write: if aAcces('fournisseurs')`),
+> chacun voit tout : republier `firestore.rules` est ce qui applique réellement la
+> séparation. Le message d'erreur de la page mentionne ce cas.
 
 **Il faut encore le publier** : console Firebase → Firestore Database → onglet
 *Règles* → coller `firestore.rules` du dépôt Admin → *Publier*. Les règles ne se

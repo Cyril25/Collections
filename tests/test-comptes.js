@@ -79,11 +79,29 @@ const fauxDb = {
   },
   collection() {
     return {
-      doc(id) { return { id: id || 'nouveau-doc' }; },
+      doc(id) {
+        const reference = id || 'nouveau-doc';
+        return {
+          id: reference,
+          update(data) { ecritures.push({ type: 'update', id: reference, data: data }); return Promise.resolve(); },
+          set(data) { ecritures.push({ type: 'set', id: reference, data: data }); return Promise.resolve(); },
+          delete() { ecritures.push({ type: 'delete', id: reference }); return Promise.resolve(); },
+          get: () => Promise.resolve({ exists: false }),
+        };
+      },
       onSnapshot() {},
+      // On enregistre les filtres demandes : une requete NON filtree serait
+      // rejetee en bloc par les regles, et la page paraitrait vide.
+      where(champ, operateur, valeur) {
+        requetes.push({ champ: champ, operateur: operateur, valeur: valeur });
+        return { onSnapshot() {}, get: () => Promise.resolve({ forEach() {} }) };
+      },
+      get: () => Promise.resolve({ forEach() {} }),
+      add(data) { ecritures.push({ type: 'add', data: data }); return Promise.resolve({ id: 'nouveau-doc' }); },
     };
   },
 };
+const requetes = [];
 const firebase = {
   firestore: Object.assign(() => fauxDb, {
     Timestamp: { fromDate: (d) => ({ toDate: () => d }) },
@@ -380,8 +398,84 @@ verifie('Tous les onclick generes sont du JS valide apres decodage', souci === n
 verifie('« MTM Monaco & Cie » ne casse pas le rendu',
   elements['fournisseurs-list'].innerHTML.includes('MTM Monaco &amp; Cie'));
 
-// --- 8. Export ---------------------------------------------------
-console.log('\n10. Export');
+// --- 10. Cloisonnement par proprietaire --------------------------
+console.log('\n10. Cloisonnement par proprietaire');
+
+// LE test qui compte. Les regles n'autorisent la lecture que de ses
+// propres fiches, et Firestore rejette EN BLOC une requete qui pourrait
+// ramener un document interdit. Une requete sans `where` ne donne donc
+// pas une liste partielle : elle donne une page vide avec une erreur de
+// permissions, alors que les donnees sont bien la.
+requetes.length = 0;
+sandbox.HUB = {
+  user: { email: 'Cyril.Samson41@Gmail.com' },
+  membre: { email: 'cyril.samson41@gmail.com', role: 'superadmin' },
+  effectif: { email: 'cyril.samson41@gmail.com', role: 'superadmin' },
+  impersonation: '',
+};
+sandbox.normaliserEmail = (e) => String(e || '').trim().toLowerCase();
+sandbox.estSuperadminReel = () => true;
+sandbox.onHubReady();
+verifie('L\'ecoute filtre sur le proprietaire',
+  requetes.some((r) => r.champ === 'proprietaire' && r.operateur === '=='),
+  JSON.stringify(requetes));
+verifie('L\'email du filtre est normalise en minuscules',
+  requetes[0] && requetes[0].valeur === 'cyril.samson41@gmail.com', requetes[0] && requetes[0].valeur);
+
+// Sous impersonation, on regarde les fiches de l'AUTRE : sinon la vue ne
+// montre pas ce que l'autre voit, et l'impersonation ne sert a rien ici.
+requetes.length = 0;
+sandbox.HUB.effectif = { email: 'marie@gmail.com', role: 'membre', projets: ['fournisseurs'] };
+sandbox.HUB.impersonation = 'marie@gmail.com';
+sandbox.onHubReady();
+verifie('Sous impersonation, on lit les fiches de la personne regardee',
+  requetes[0] && requetes[0].valeur === 'marie@gmail.com', requetes[0] && requetes[0].valeur);
+
+// Une fiche creee porte son proprietaire, sans quoi elle serait invisible
+// des le rechargement suivant.
+ecritures.length = 0;
+sandbox.fournisseurEnEdition = null;
+// Passer par getElementById : le DOM simule cree les elements a la
+// demande, ils n'existent pas avant d'avoir ete reclames.
+document.getElementById('ff-nom').value = 'Nouveau fournisseur';
+document.getElementById('ff-site').value = '';
+document.getElementById('ff-notes').value = '';
+sandbox.sauverFournisseur();
+const creation = ecritures.find((e) => e.type === 'add');
+verifie('Un fournisseur cree porte un proprietaire',
+  !!creation && creation.data.proprietaire === 'marie@gmail.com',
+  creation && creation.data.proprietaire);
+// Tracabilite : l'utilisateur REEL, pas l'impersonne. Sous impersonation
+// l'ecriture part avec le jeton du superadmin ; inscrire l'autre identite
+// ferait mentir la trace.
+verifie('...et « creePar » nomme l\'utilisateur reel, pas l\'impersonne',
+  !!creation && creation.data.creePar === 'cyril.samson41@gmail.com',
+  creation && creation.data.creePar);
+
+// Modifier ne doit jamais reecrire le proprietaire : les regles
+// l'interdisent, et une fiche qui change de main toute seule serait pire
+// qu'une fiche mal rangee.
+ecritures.length = 0;
+sandbox.fournisseurEnEdition = 'f1';
+sandbox.sauverFournisseur();
+const maj = ecritures.find((e) => e.type === 'update');
+verifie('Une modification ne touche pas au proprietaire',
+  !!maj && !('proprietaire' in maj.data), maj && JSON.stringify(Object.keys(maj.data)));
+sandbox.fournisseurEnEdition = null;
+
+// Les regles publiees doivent correspondre a ce que le client suppose.
+const blocFournisseurs = fs.readFileSync(
+  path.join(RACINE, '..', 'Admin', 'firestore.rules'), 'utf8').split('match /fournisseurs/')[1] || '';
+verifie('Les regles du hub cloisonnent bien par proprietaire',
+  /resource\.data\.proprietaire == idAppelant\(\)/.test(blocFournisseurs),
+  'le bloc match /fournisseurs ne filtre pas par proprietaire');
+verifie('...et interdisent de changer le proprietaire d\'une fiche',
+  /request\.resource\.data\.proprietaire == resource\.data\.proprietaire/.test(blocFournisseurs));
+verifie('...et exigent un proprietaire a la creation',
+  /request\.resource\.data\.proprietaire == idAppelant\(\)/.test(blocFournisseurs));
+
+// --- 11. Export --------------------------------------------------
+console.log('\n11. Export');
 sandbox.exporterJson();
 verifie('Un fichier est telecharge', telechargements.length === 1);
 const contenu = JSON.parse(blobs.get(telechargements[0].href).parts[0]);

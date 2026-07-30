@@ -919,6 +919,26 @@ body.login-page {
 .avertissement i { font-size: 1.1rem; color: #B8760A; margin-top: 2px; }
 .avertissement strong { display: block; }
 
+/* Meme forme, autre intention : une information a traiter, pas une mise
+   en garde permanente. Bleu plutot qu'ambre pour qu'on ne les confonde
+   pas d'un coup d'oeil. */
+.avertissement--info {
+    background: #EBF3FA;
+    border-color: #A9CBEA;
+    border-left-color: #1976D2;
+    color: #1B4E7E;
+}
+.avertissement--info i { color: #1976D2; }
+.avertissement--info strong { display: inline; }
+
+/* Qui regarde-t-on ? Discret : c'est un reperage, pas une alerte. */
+.proprietaire-vu {
+    margin: calc(-1 * var(--spacing-sm)) 0 var(--spacing-md);
+    font-size: 0.8rem;
+    color: var(--color-text-muted);
+}
+.proprietaire-vu i { margin-right: 6px; }
+
 .fournisseur {
     background: #fff;
     border: 1px solid var(--color-border-light);

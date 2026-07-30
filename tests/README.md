@@ -50,6 +50,15 @@ Le reste couvre l'unicité du compte principal, la suppression en cascade, et le
 que la recherche ne porte pas sur les mots de passe — sinon on pourrait en confirmer un
 par tâtonnement sans jamais l'afficher.
 
+**La requête filtrée par propriétaire.** Une règle Firestore n'est pas un filtre : le
+serveur rejette *en bloc* toute requête qui pourrait ramener un document interdit. Si
+quelqu'un retire un jour le `where('proprietaire', ...)`, la page ne montrera pas une liste
+partielle — elle sera entièrement vide, avec une erreur de permissions, alors que les
+données sont bien là. Une heure de diagnostic pour une ligne. Un test vérifie donc le
+filtre lui-même, sa valeur normalisée en minuscules, et le fait qu'il suit la personne
+impersonnée. Trois autres relisent `firestore.rules` du dépôt Admin pour s'assurer que les
+règles disent la même chose que le client suppose.
+
 **Le glisser-déposer passe par un faux Firestore** qui capture les écritures : on
 vérifie les rangs qui *partent réellement en base*, pas seulement l'ordre affiché. Le
 réordonnancement n'a aucune autre trace, et un rang mal écrit ne se verrait qu'au

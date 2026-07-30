@@ -8,6 +8,11 @@
 //   type: 'compte'       fournisseurId, libelle, email, identifiant,
 //                        motDePasse, principal, notes
 //
+// CHACUN CHEZ SOI. Les deux types portent un champ « proprietaire »
+// (email du detenteur) et les regles Firestore ne laissent voir que ses
+// propres fiches. Le droit « fournisseurs » ouvre la page, pas les
+// identifiants des autres.
+//
 // Pourquoi pas une sous-collection « fournisseurs/{id}/comptes » : il
 // faudrait un ecouteur par fournisseur, ou une requete collectionGroup
 // avec son index — pour une poignee de documents. Ici un seul
@@ -44,17 +49,35 @@ var compteEnEdition = null;
 var fournisseurDuCompte = null;
 var suppressionEnCours = null;
 var premierChargement = true;
+// Email dont on affiche les fiches. C'est celui de la personne
+// « effective » : sous impersonation, on regarde bien les fiches de
+// l'autre, sinon la vue ne montrerait rien de ce qu'elle voit.
+var proprietaireVu = '';
+var fichesOrphelines = [];
 
 // ------------------------------------------------------------
 // 2. Démarrage
 // ------------------------------------------------------------
 function onHubReady() {
     db = firebase.firestore();
+    proprietaireVu = normaliserEmail(
+        (HUB.effectif && HUB.effectif.email) || (HUB.user && HUB.user.email));
+    afficherProprietaire();
     ecouterFournisseurs();
+    // Rattrapage des fiches d'avant le cloisonnement : seul le
+    // propriétaire du hub peut les retrouver.
+    if (estSuperadminReel() && !HUB.impersonation) chercherFichesOrphelines();
 }
 
 function ecouterFournisseurs() {
-    db.collection('fournisseurs').onSnapshot(function(snapshot) {
+    // ⚠ REQUÊTE OBLIGATOIREMENT FILTRÉE. Une règle Firestore n'est pas un
+    // filtre : le serveur rejette en bloc toute requête qui POURRAIT
+    // ramener un document interdit. Sans ce `where`, la page ne serait pas
+    // partiellement vide — elle serait totalement vide, avec une erreur de
+    // permissions, alors que les données sont bien là.
+    db.collection('fournisseurs')
+      .where('proprietaire', '==', proprietaireVu)
+      .onSnapshot(function(snapshot) {
         fournisseurs = [];
         comptes = [];
         snapshot.forEach(function(doc) {
@@ -74,9 +97,81 @@ function ecouterFournisseurs() {
                 '<strong>Impossible de lire les fournisseurs.</strong><br>' +
                 '<span style="color:var(--color-text-muted)">' + escapeHtml(erreur.message) + '</span><br>' +
                 '<span style="color:var(--color-text-muted)">Si le message parle de permissions : le bloc ' +
-                '<code>match /fournisseurs</code> n\'est pas publié dans les règles Firestore.</span>' +
+                '<code>match /fournisseurs</code> n\'est pas publié dans les règles Firestore, ' +
+                'ou sa version publiée est antérieure au cloisonnement par propriétaire.</span>' +
                 '</div>';
         }
+    });
+}
+
+// Le superadmin voit les fiches d'un seul propriétaire à la fois : autant
+// dire lequel, sinon « il n'y a rien » et « il n'y a rien À MOI » se
+// confondent. Un membre ordinaire ne voit jamais que les siennes, la
+// mention n'a rien à lui apprendre.
+function afficherProprietaire() {
+    var bloc = document.getElementById('proprietaire-vu');
+    if (!bloc) return;
+    if (!estSuperadminReel()) {
+        bloc.style.display = 'none';
+        return;
+    }
+    bloc.innerHTML = '<i class="fa-solid fa-user-lock"></i> Fiches de <strong>'
+        + escapeHtml(proprietaireVu) + '</strong> — chacun ne voit que les siennes.';
+    bloc.style.display = '';
+}
+
+// ------------------------------------------------------------
+// 2b. Rattrapage des fiches sans propriétaire
+// ------------------------------------------------------------
+// Les fiches créées avant le cloisonnement n'ont pas de champ
+// « proprietaire » : elles ne correspondent à aucune requête filtrée et
+// deviendraient invisibles pour toujours.
+//
+// Firestore ne sait pas interroger l'ABSENCE d'un champ — ni
+// `where('proprietaire', '==', null)`, qui ne trouve que les null
+// explicites. Il faut donc lire la collection entière, ce que seul le
+// superadmin peut faire, et une seule fois au chargement.
+function chercherFichesOrphelines() {
+    db.collection('fournisseurs').get().then(function(snapshot) {
+        fichesOrphelines = [];
+        snapshot.forEach(function(doc) {
+            if (!doc.data().proprietaire) fichesOrphelines.push(doc.id);
+        });
+        var bloc = document.getElementById('orphelines');
+        if (!bloc || !fichesOrphelines.length) return;
+        var nb = fichesOrphelines.length;
+        bloc.innerHTML = '<i class="fa-solid fa-inbox"></i>'
+            + '<div><strong>' + nb + ' fiche' + (nb > 1 ? 's' : '')
+            + ' sans propriétaire.</strong> '
+            + 'Créée' + (nb > 1 ? 's' : '') + ' avant le cloisonnement, '
+            + (nb > 1 ? 'elles n\'apparaissent' : 'elle n\'apparaît')
+            + ' dans aucune liste tant que personne ne '
+            + (nb > 1 ? 'les' : 'l\'') + 'a reprise' + (nb > 1 ? 's' : '') + '.'
+            + '<button type="button" class="btn-ajout-compte" style="margin-left:8px" '
+            + 'onclick="adopterFichesOrphelines()">Me ' + (nb > 1 ? 'les' : 'l\'')
+            + ' attribuer</button></div>';
+        bloc.style.display = '';
+    }).catch(function(erreur) {
+        // Pas bloquant : sans ce rattrapage la page marche, elle montre
+        // juste moins de choses.
+        console.warn('Recherche des fiches orphelines impossible :', erreur.message);
+    });
+}
+
+function adopterFichesOrphelines() {
+    if (!fichesOrphelines.length) return;
+    var lot = db.batch();
+    fichesOrphelines.forEach(function(id) {
+        lot.update(db.collection('fournisseurs').doc(id), { proprietaire: proprietaireVu });
+    });
+    lot.commit().then(function() {
+        showToast(fichesOrphelines.length + ' fiche(s) reprise(s).', 'success');
+        fichesOrphelines = [];
+        var bloc = document.getElementById('orphelines');
+        if (bloc) bloc.style.display = 'none';
+    }).catch(function(erreur) {
+        console.error(erreur);
+        showToast('Reprise impossible : ' + erreur.message, 'error');
     });
 }
 
@@ -621,8 +716,16 @@ function sauverFournisseur() {
 
     var operation;
     if (fournisseurEnEdition) {
+        // `proprietaire` n'est jamais réécrit : les règles l'interdisent, et
+        // une fiche qui change de main sans qu'on l'ait demandé serait pire
+        // qu'une fiche mal rangée.
         operation = db.collection('fournisseurs').doc(fournisseurEnEdition).update(donnees);
     } else {
+        donnees.proprietaire = proprietaireVu;
+        // Traçabilité : l'utilisateur RÉEL, jamais l'impersonné. Sous
+        // impersonation les écritures partent avec le jeton du superadmin,
+        // inscrire l'autre identité ferait mentir la trace.
+        donnees.creePar = normaliserEmail(HUB.user && HUB.user.email);
         donnees.createdAt = firebase.firestore.FieldValue.serverTimestamp();
         operation = db.collection('fournisseurs').add(donnees);
     }
@@ -744,6 +847,13 @@ function sauverCompte() {
         reference = db.collection('fournisseurs').doc(compteEnEdition);
         lot.update(reference, donnees);
     } else {
+        // Le compte appartient au même que son fournisseur — forcément,
+        // puisqu'on ne voit que les siens. Le champ est dupliqué sur le
+        // compte parce que les règles Firestore s'évaluent document par
+        // document : sans lui, il faudrait un `get()` sur le fournisseur
+        // parent à chaque lecture.
+        donnees.proprietaire = proprietaireVu;
+        donnees.creePar = normaliserEmail(HUB.user && HUB.user.email);
         donnees.createdAt = firebase.firestore.FieldValue.serverTimestamp();
         reference = db.collection('fournisseurs').doc();
         lot.set(reference, donnees);
@@ -844,6 +954,10 @@ function exporterJson() {
     var contenu = {
         exporte_le: new Date().toISOString(),
         source: window.location.hostname + ' — collection Firestore « fournisseurs »',
+        // L'export ne sort que les fiches affichées, donc celles d'un seul
+        // propriétaire : c'est écrit dedans, sans quoi deux exports de deux
+        // personnes se confondraient une fois sur le disque.
+        proprietaire: proprietaireVu,
         avertissement: 'Ce fichier contient des mots de passe en clair.',
         fournisseurs: fournisseurs.slice().sort(function(a, b) {
             return (a.nom || '').localeCompare(b.nom || '', 'fr');
