@@ -727,6 +727,20 @@ body.login-page {
 }
 .btn-export:hover { background: var(--color-surface); color: var(--color-primary); }
 
+/* Le bouton par lequel les mots de passe quittent le site. Il ne crie
+   pas — il est à côté d'un bouton anodin, et un rouge plein ferait
+   cliquer par habitude sur celui de gauche sans lire. Le liseré suffit
+   à dire « celui-ci n'est pas le même geste ». */
+.btn-export--sensible {
+    border-color: var(--color-danger);
+    color: var(--color-danger);
+}
+.btn-export--sensible:hover {
+    background: var(--color-danger);
+    border-color: var(--color-danger);
+    color: #fff;
+}
+
 /* Bandeau de chiffres. Le liseré gauche porte le sens : il ne rougit
    que quand quelque chose demande une action. */
 .stats {

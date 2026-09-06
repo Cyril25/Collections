@@ -32,8 +32,12 @@ function fakeEl(id) {
   };
 }
 const telechargements = [];
+// Les ecouteurs sont retenus, pas jetes : sans ca le handler Echap de
+// comptes.js ne serait teste nulle part, et une modale qui ne se ferme
+// plus ne se voit qu'a l'usage.
+const ecouteurs = {};
 const document = {
-  addEventListener() {},
+  addEventListener(type, fn) { (ecouteurs[type] = ecouteurs[type] || []).push(fn); },
   getElementById(id) { elements[id] = elements[id] || fakeEl(id); return elements[id]; },
   createElement(tag) {
     if (tag === 'a') {
@@ -475,7 +479,12 @@ verifie('...et exigent un proprietaire a la creation',
   /request\.resource\.data\.proprietaire == idAppelant\(\)/.test(blocFournisseurs));
 
 // --- 11. Export --------------------------------------------------
-console.log('\n11. Export');
+// DEUX BOUTONS, ET LA SEULE CHOSE QUI COMPTE ICI EST LEUR DIFFERENCE.
+// Le geste courant ne doit RIEN laisser sortir ; l'export complet doit
+// tout sortir, et se signaler. Si une modification future ramenait le
+// mot de passe dans l'export courant, rien a l'ecran ne le dirait — le
+// fichier part dans les telechargements et personne ne l'ouvre.
+console.log('\n11. Export courant (sans les mots de passe)');
 sandbox.exporterJson();
 verifie('Un fichier est telecharge', telechargements.length === 1);
 const contenu = JSON.parse(blobs.get(telechargements[0].href).parts[0]);
@@ -497,25 +506,86 @@ verifie('Les comptes sont exportes dans l\'ordre du glisser-deposer',
   contenu.fournisseurs.find((f) => f.nom === 'Ordre & Cie').comptes
     .map((c) => c.libelle).join(',') === 'Le principal,Premier,Troisieme,Deuxieme',
   contenu.fournisseurs.find((f) => f.nom === 'Ordre & Cie').comptes.map((c) => c.libelle).join(','));
-// L'export est une sauvegarde : incomplet, il ne servirait a rien.
-const mdp = contenu.fournisseurs
-  .find((f) => f.nom === 'Monnaie de Paris').comptes
-  .find((c) => c.email === 'cyril.samson@free.fr').motDePasse;
-verifie('Les mots de passe sont bien dans l\'export',
-  mdp === 'A<b>Str0ng&Pass', 'sauvegarde incomplete : ' + mdp);
-// ...mais le fichier doit le dire, il sort de toute regle Firestore.
 verifie('L\'export porte les coordonnees et l\'adresse',
   contenu.fournisseurs.find((f) => f.nom === 'Monnaie de Paris').comptes
     .some((c) => c.telephone === '06 12 34 56 78' && c.ville === 'Besançon'
               && c.modePaiement === 'Carte Boursorama'), 'coordonnees absentes de l\'export');
-verifie('L\'export porte un avertissement en clair',
-  /mots de passe en clair/i.test(contenu.avertissement || ''), contenu.avertissement);
-const dernierToast = sandbox.toasts[sandbox.toasts.length - 1];
-verifie('Le toast previent que le fichier contient les mots de passe',
-  /mots de passe en clair/i.test(dernierToast.message), dernierToast.message);
-verifie('Le nom de fichier est date',
+
+// LE TEST QUI JUSTIFIE LE CHANTIER DU 2026-09-06.
+const tousLesMdp = contenu.fournisseurs
+  .flatMap((f) => f.comptes)
+  .map((c) => c.motDePasse);
+verifie('AUCUN mot de passe ne sort de l\'export courant',
+  tousLesMdp.every((m) => m === null), JSON.stringify(tousLesMdp));
+verifie('Le JSON complet ne contient nulle part le mot de passe',
+  !blobs.get(telechargements[0].href).parts[0].includes('A<b>Str0ng&Pass'),
+  'le mot de passe fuit malgre motDePasse: null');
+// Sans la valeur, il faut savoir lesquels sont a ressaisir : une
+// sauvegarde muette laisserait deviner quels comptes sont incomplets.
+verifie('...mais l\'export dit lesquels en avaient un',
+  contenu.fournisseurs.find((f) => f.nom === 'Monnaie de Paris').comptes
+    .find((c) => c.email === 'cyril.samson@free.fr').motDePasseDefini === true);
+verifie('L\'export courant s\'annonce comme incomplet',
+  contenu.motsDePasse === 'exclus'
+  && /sans les mots de passe/i.test(contenu.avertissement || ''),
+  contenu.motsDePasse + ' / ' + contenu.avertissement);
+verifie('Le toast ne promet pas une sauvegarde complete',
+  /sans les mots de passe/i.test(sandbox.toasts[sandbox.toasts.length - 1].message),
+  sandbox.toasts[sandbox.toasts.length - 1].message);
+verifie('Le nom de fichier est date, sans mention d\'alerte',
   /^comptes-collections-\d{4}-\d{2}-\d{2}\.json$/.test(telechargements[0].download),
   telechargements[0].download);
+
+console.log('\n11 bis. Export complet (derriere confirmation)');
+// Le bouton n'exporte pas : il ouvre la modale. Si un jour il
+// telechargeait directement, la confirmation ne servirait plus a rien
+// et personne ne s'en apercevrait.
+sandbox.ouvrirExportComplet();
+verifie('Le bouton ouvre la modale et ne telecharge rien',
+  elements['modal-export'].style.display === 'flex' && telechargements.length === 1,
+  telechargements.length + ' telechargement(s)');
+const attendus = sandbox.fournisseurs
+  .flatMap((f) => sandbox.comptesDe(f.id))
+  .filter((c) => c.motDePasse).length;
+verifie('La modale annonce combien de mots de passe vont sortir',
+  attendus > 0 && elements['export-detail'].textContent.includes(String(attendus)),
+  attendus + ' attendus — ' + elements['export-detail'].textContent);
+
+sandbox.confirmerExportComplet();
+verifie('Confirmer telecharge et referme la modale',
+  telechargements.length === 2 && elements['modal-export'].style.display === 'none');
+const complet = JSON.parse(blobs.get(telechargements[1].href).parts[0]);
+const mdp = complet.fournisseurs
+  .find((f) => f.nom === 'Monnaie de Paris').comptes
+  .find((c) => c.email === 'cyril.samson@free.fr').motDePasse;
+// Le filet doit rester un filet : ampute, il ne servirait a rien.
+verifie('Les mots de passe sont bien dans l\'export complet',
+  mdp === 'A<b>Str0ng&Pass', 'sauvegarde incomplete : ' + mdp);
+verifie('L\'export complet le dit en clair',
+  complet.motsDePasse === 'en clair'
+  && /mots de passe en clair/i.test(complet.avertissement || ''),
+  complet.motsDePasse + ' / ' + complet.avertissement);
+verifie('Le toast previent que le fichier contient les mots de passe',
+  /mots de passe en clair/i.test(sandbox.toasts[sandbox.toasts.length - 1].message),
+  sandbox.toasts[sandbox.toasts.length - 1].message);
+// Le nom crie : c'est ce qui permet de reperer le fichier dangereux
+// dans les telechargements, et de retrouver les anciens pour les jeter.
+verifie('Le nom de fichier signale ce qu\'il contient',
+  /^comptes-collections-\d{4}-\d{2}-\d{2}-AVEC-MOTS-DE-PASSE\.json$/
+    .test(telechargements[1].download),
+  telechargements[1].download);
+// Meme structure des deux cotes : une restauration n'a pas a connaitre
+// deux formats, seule la valeur du mot de passe change.
+verifie('Les deux exports ont la meme forme',
+  JSON.stringify(contenu.fournisseurs.map((f) => f.comptes.map((c) => Object.keys(c).join(','))))
+    === JSON.stringify(complet.fournisseurs.map((f) => f.comptes.map((c) => Object.keys(c).join(',')))));
+
+// Echap doit fermer la modale de l'export comme les autres, sinon on
+// est coince devant une confirmation qu'on ne voulait pas ouvrir.
+sandbox.ouvrirExportComplet();
+(ecouteurs.keydown || []).forEach((fn) => fn({ key: 'Escape' }));
+verifie('Echap referme la modale d\'export sans telecharger',
+  elements['modal-export'].style.display === 'none' && telechargements.length === 2);
 
 // --- Bilan -------------------------------------------------------
 console.log('\n' + (echecs === 0 ? 'Tout passe.' : echecs + ' echec(s).'));

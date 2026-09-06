@@ -335,8 +335,11 @@ coûte, pour pouvoir le refaire en connaissance de cause :
 - **La CSP contient `'unsafe-inline'`** — inévitable, tout le hub fonctionne avec des
   `onclick`. Le code échappe soigneusement, mais en cas de XSS la CSP ne serait pas un
   second rempart.
-- **L'export JSON les écrit en clair** dans le dossier Téléchargements, hors de toute
-  règle Firestore. Le toast le rappelle au moment du clic.
+- **L'export JSON complet les écrit en clair** dans le dossier Téléchargements, hors de
+  toute règle Firestore. C'était le vrai trou : tout ce que la page fait pour ces mots de
+  passe s'arrête au téléchargement, et le fichier survivrait à n'importe quel chiffrement
+  futur de la base. Depuis le 2026-09-06, **le geste courant ne les sort plus** — voir
+  « Sauvegarde ».
 - Google les stocke lisibles au niveau applicatif.
 
 **Ce qu'on n'y met pas** : rien qui déplace de l'argent directement (banque, PayPal,
@@ -362,6 +365,7 @@ Ce que le code fait quand même, et qui n'est pas rien :
 | Bouton **copier** à côté de l'œil | L'usage courant (coller dans le formulaire) sans rien afficher |
 | **Re-masquage automatique** après 30 s | Le mot de passe révélé puis oublié à l'écran |
 | Le mot de passe n'entre **pas dans la recherche** | Le confirmer par tâtonnement sans jamais l'afficher |
+| L'export courant **exclut les mots de passe** ; le complet est derrière une confirmation et un nom de fichier explicite | Le fichier oublié dans les téléchargements, lisible par tout ce qui accède au disque |
 | `urlSure()` sur le champ Site | Un `javascript:` collé dans le champ deviendrait un lien exécutable sur une page qui a les mots de passe en mémoire |
 
 > **L'œil est une protection contre le regard par-dessus l'épaule, pas une mesure de
@@ -428,8 +432,31 @@ qui ferme toute collection non déclarée.
 ### Sauvegarde
 
 Le plan gratuit de Firestore n'offre ni sauvegarde automatique ni restauration à un
-instant T. Le bouton **Exporter** est la seule protection contre une suppression
-malencontreuse : il exporte tout, filtres ignorés. À utiliser de temps en temps.
+instant T. L'export est la seule protection contre une suppression malencontreuse : il
+prend tout, filtres ignorés. À utiliser de temps en temps.
+
+**Deux boutons, et leur différence est le sujet** (page Comptes, depuis le 2026-09-06) :
+
+| Bouton | Fichier | Contenu |
+|---|---|---|
+| **Exporter** | `comptes-collections-<date>.json` | Tout, **sans les mots de passe** (`motDePasse: null`) |
+| **Avec les mots de passe** | `comptes-collections-<date>-AVEC-MOTS-DE-PASSE.json` | Tout, mots de passe **en clair** — derrière une confirmation |
+
+Le raisonnement : le geste qu'on répète sans y penser ne doit rien laisser fuir, et le
+geste dangereux doit être délibéré. On ne retire pas le filet, on cesse de le tendre par
+défaut.
+
+Deux détails qui ne sont pas cosmétiques :
+
+- **Le nom du fichier complet crie ce qu'il contient.** C'est ce qui permet de le
+  reconnaître d'un coup d'œil dans les téléchargements, et surtout de retrouver *tous*
+  les anciens le jour où on fait le ménage.
+- **L'export courant garde `motDePasseDefini`** sur chaque compte. Sans ça, une
+  restauration laisserait des comptes muets sans qu'on sache lesquels sont incomplets.
+
+⚠ Une sauvegarde sans les mots de passe **ne restaure pas tout**. Le fichier le dit
+lui-même dans son champ `avertissement`. Pour un filet complet, c'est le second bouton —
+et le fichier est alors à ranger ailleurs que dans les téléchargements, puis à supprimer.
 
 ## Mise en place
 

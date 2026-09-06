@@ -938,27 +938,68 @@ function confirmerSuppression() {
 }
 
 // ------------------------------------------------------------
-// 10. Export JSON
+// 10. Export JSON — DEUX BOUTONS, ET C'EST TOUT LE SUJET
 // ------------------------------------------------------------
-// Même filet que sur la page Achats : Firestore en plan gratuit n'offre
-// aucune sauvegarde. ⚠ Ce fichier contient les mots de passe EN CLAIR et
-// atterrit dans le dossier Téléchargements, hors de toute règle Firestore.
-// Le toast le rappelle — c'est le moment où on peut encore décider de le
-// ranger ailleurs.
-function exporterJson() {
-    if (!fournisseurs.length && !comptes.length) {
-        showToast('Rien à exporter.', 'error');
-        return;
-    }
+// Firestore en plan gratuit n'offre AUCUNE sauvegarde : ni export
+// managé, ni restauration à un instant T. L'export est donc le seul
+// filet contre une suppression malencontreuse, et il prend TOUT,
+// filtres ignorés.
+//
+// ⚠ MAIS C'EST AUSSI LE VRAI TROU DE SÉCURITÉ DE CETTE PAGE. Tout ce
+// que le site fait pour ces mots de passe — jamais dans le HTML généré,
+// re-masquage au bout de DELAI_MASQUAGE_MS, exclus de la recherche,
+// cloisonnés par `firestore.rules` — s'arrête net au téléchargement. Le
+// fichier, lui, est lisible par n'importe quel processus de la machine,
+// indexé par la recherche du système, synchronisé si le dossier l'est,
+// et il n'expire jamais. C'est de surcroît un INSTANTANÉ : il garde les
+// mots de passe changés depuis, ceux qu'on croyait retirés.
+//
+// Et surtout, il survit à toute protection future : on pourrait chiffrer
+// la base entière que ce bouton écrirait encore du texte clair dans le
+// dossier des téléchargements.
+//
+// D'OÙ LES DEUX BOUTONS (décidé le 2026-09-06). Le geste courant, celui
+// qu'on répète sans y penser, ne sort plus les mots de passe. L'export
+// complet existe toujours, derrière une confirmation explicite. On ne
+// retire pas le filet : on cesse de le tendre par défaut.
+// ------------------------------------------------------------
 
-    var contenu = {
+// Le nom du fichier complet crie ce qu'il contient. Ce n'est pas
+// décoratif : c'est ce qui permet de reconnaître le fichier dangereux
+// d'un coup d'œil dans les téléchargements, et surtout de retrouver
+// tous les anciens le jour où on fait le ménage.
+var SUFFIXE_EXPORT_COMPLET = '-AVEC-MOTS-DE-PASSE';
+
+// Combien de mots de passe sortiraient de l'export. Compté sur ce que
+// l'export produit vraiment (fournisseur par fournisseur), et non sur
+// `comptes` : une fiche orpheline n'est rattachée à aucun fournisseur,
+// elle n'est donc pas exportée et ne doit pas être annoncée.
+function nbMotsDePasseExportables() {
+    var total = 0;
+    fournisseurs.forEach(function(fournisseur) {
+        comptesDe(fournisseur.id).forEach(function(compte) {
+            if (compte.motDePasse) total++;
+        });
+    });
+    return total;
+}
+
+// L'objet exporté. `avecMotsDePasse` est le SEUL écart entre les deux
+// boutons : même structure, même ordre, mêmes champs — pour qu'une
+// éventuelle restauration n'ait pas à connaître deux formats.
+function contenuExport(avecMotsDePasse) {
+    return {
         exporte_le: new Date().toISOString(),
         source: window.location.hostname + ' — collection Firestore « fournisseurs »',
         // L'export ne sort que les fiches affichées, donc celles d'un seul
         // propriétaire : c'est écrit dedans, sans quoi deux exports de deux
         // personnes se confondraient une fois sur le disque.
         proprietaire: proprietaireVu,
-        avertissement: 'Ce fichier contient des mots de passe en clair.',
+        motsDePasse: avecMotsDePasse ? 'en clair' : 'exclus',
+        avertissement: avecMotsDePasse
+            ? 'Ce fichier contient des mots de passe en clair.'
+            : 'Sauvegarde SANS les mots de passe : elle ne suffit pas à tout restaurer. '
+              + 'Le champ motDePasseDefini dit lesquels seraient à ressaisir.',
         fournisseurs: fournisseurs.slice().sort(function(a, b) {
             return (a.nom || '').localeCompare(b.nom || '', 'fr');
         }).map(function(fournisseur) {
@@ -973,7 +1014,13 @@ function exporterJson() {
                         libelle:     compte.libelle || '',
                         email:       compte.email || '',
                         identifiant: compte.identifiant || '',
-                        motDePasse:   compte.motDePasse || '',
+                        motDePasse:  avecMotsDePasse ? (compte.motDePasse || '') : null,
+                        // Sans la valeur, il faut au moins savoir lesquels
+                        // sont à ressaisir. Un `null` partout ne dirait pas
+                        // si le compte avait un mot de passe : on
+                        // restaurerait des comptes muets sans savoir
+                        // lesquels sont incomplets.
+                        motDePasseDefini: !!compte.motDePasse,
                         telephone:    compte.telephone || '',
                         modePaiement: compte.modePaiement || '',
                         destinataire: compte.destinataire || '',
@@ -987,16 +1034,64 @@ function exporterJson() {
             };
         })
     };
+}
 
+function telechargerExport(avecMotsDePasse) {
+    if (!fournisseurs.length && !comptes.length) {
+        showToast('Rien à exporter.', 'error');
+        return;
+    }
+
+    var contenu = contenuExport(avecMotsDePasse);
     var blob = new Blob([JSON.stringify(contenu, null, 2)], { type: 'application/json;charset=utf-8;' });
     var url = URL.createObjectURL(blob);
     var lien = document.createElement('a');
     lien.href = url;
-    lien.download = 'comptes-collections-' + new Date().toISOString().slice(0, 10) + '.json';
+    lien.download = 'comptes-collections-' + new Date().toISOString().slice(0, 10)
+        + (avecMotsDePasse ? SUFFIXE_EXPORT_COMPLET : '') + '.json';
     lien.click();
     URL.revokeObjectURL(url);
 
-    showToast('Export téléchargé — il contient les mots de passe en clair.', 'info');
+    showToast(avecMotsDePasse
+        ? 'Export téléchargé — il contient les mots de passe en clair.'
+        : 'Sauvegarde téléchargée, sans les mots de passe.',
+        'info');
+}
+
+// Le geste courant. Il ne peut plus rien laisser fuir.
+function exporterJson() {
+    telechargerExport(false);
+}
+
+// ------------------------------------------------------------
+// L'export complet, derrière une confirmation
+// ------------------------------------------------------------
+// La modale ne demande pas « êtes-vous sûr » : elle dit ce que le
+// fichier contiendra et où il va atterrir. Une confirmation qui
+// n'apprend rien se clique sans la lire.
+function ouvrirExportComplet() {
+    if (!fournisseurs.length && !comptes.length) {
+        showToast('Rien à exporter.', 'error');
+        return;
+    }
+
+    var nb = nbMotsDePasseExportables();
+    document.getElementById('export-detail').textContent = nb
+        ? 'Le fichier contiendra ' + nb + ' mot' + (nb > 1 ? 's' : '') + ' de passe en clair, '
+          + 'lisibles par tout ce qui accède à vos téléchargements. Il ne s\'efface pas tout '
+          + 'seul : supprimez-le une fois la sauvegarde rangée.'
+        : 'Aucun compte n\'a de mot de passe enregistré : ce fichier sera identique à la '
+          + 'sauvegarde courante.';
+    document.getElementById('modal-export').style.display = 'flex';
+}
+
+function fermerExportComplet() {
+    document.getElementById('modal-export').style.display = 'none';
+}
+
+function confirmerExportComplet() {
+    fermerExportComplet();
+    telechargerExport(true);
 }
 
 // ------------------------------------------------------------
@@ -1004,7 +1099,9 @@ function exporterJson() {
 // ------------------------------------------------------------
 document.addEventListener('keydown', function(evenement) {
     if (evenement.key !== 'Escape') return;
-    if (document.getElementById('modal-suppression').style.display === 'flex') {
+    if (document.getElementById('modal-export').style.display === 'flex') {
+        fermerExportComplet();
+    } else if (document.getElementById('modal-suppression').style.display === 'flex') {
         fermerSuppression();
     } else if (document.getElementById('modal-compte').style.display === 'flex') {
         fermerModaleCompte();
