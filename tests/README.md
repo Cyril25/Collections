@@ -12,7 +12,7 @@ d'étape de build.
 |---|---|
 | `test-acces.js` | Droit d'entrée, impersonation, et cohérence du slug de site avec le hub |
 | `test-achats.js` | Le suivi des achats : montants, statuts, retard, doublons, dates, échappement, export |
-| `test-comptes.js` | Fournisseurs et comptes : assainissement des URL, non-fuite des mots de passe, révélation, copie, ordre, recherche, export |
+| `test-comptes.js` | Fournisseurs et comptes : assainissement des URL, non-fuite des mots de passe, révélation, copie, ordre, favori, journal, recherche, export |
 
 ### `test-acces.js` — le slug de site, surtout
 
@@ -73,6 +73,15 @@ réordonnancement n'a aucune autre trace, et un rang mal écrit ne se verrait qu
 rechargement suivant. Les cas couverts : descendre, remonter, déposer sur le principal
 (qui garde le rang 0), rangs contigus sans trou, dépôt sur soi-même et dépôt chez un
 autre fournisseur — les deux derniers ne doivent rien écrire du tout.
+
+**Le favori et le journal passent par le même faux Firestore.** Pour le favori : un seul
+à la fois, l'ancien décoché dans le même lot, et l'ordre d'affichage qui en découle. Pour
+le journal : l'ajout part en `arrayUnion` (deux appareils ne s'écrasent pas), la
+modification ne touche que la note visée, le moyen de paiement du jour est retenu dans la
+note sans toucher à celui du compte, et l'aller-retour avec `datetime-local` ne décale pas
+l'heure. Le liseré « utilisé aujourd'hui » est vérifié sur trois comptes — noté
+aujourd'hui, noté hier, jamais noté — parce qu'une erreur de jour le rendrait faux sans
+que rien n'échoue.
 
 ### `test-achats.js` — où porte l'effort
 

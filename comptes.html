@@ -186,6 +186,39 @@
         </div>
     </div>
 
+    <!-- Modale note — le journal d'un compte, le jour d'une sortie. Placée
+         avant les confirmations : à z-index égal, c'est l'ordre du
+         document qui décide, et « Supprimer cette note ? » doit passer
+         par-dessus. -->
+    <div id="modal-note" class="modal-overlay" style="display:none">
+        <div class="modal" role="dialog" aria-modal="true" aria-labelledby="titre-note" style="max-width:520px">
+            <h2 class="modal-title" id="titre-note">Nouvelle note</h2>
+            <p class="modal-desc" id="fn-compte"></p>
+            <div class="modal-form">
+                <div class="field">
+                    <label for="fn-date">Date et heure *</label>
+                    <input type="datetime-local" id="fn-date">
+                </div>
+                <div class="field">
+                    <label for="fn-paiement">Payé avec</label>
+                    <input type="text" id="fn-paiement" list="paiement-list" autocomplete="off"
+                           placeholder="Ex : carte BNP">
+                    <span class="field-hint">Celui du compte par défaut — à changer s'il a varié.</span>
+                </div>
+                <div class="field field--full">
+                    <label for="fn-texte">Commentaire</label>
+                    <textarea id="fn-texte" rows="3"
+                              placeholder="Ex : sortie Portugal — 2 € commémorative BU + coffret BE"></textarea>
+                </div>
+            </div>
+            <div class="modal-actions">
+                <button type="button" id="fn-supprimer" class="modal-btn modal-btn-danger" style="display:none" onclick="ouvrirSuppressionNote()">Supprimer</button>
+                <button type="button" class="modal-btn" onclick="fermerModaleNote()">Annuler</button>
+                <button type="button" class="modal-btn modal-btn-primary" onclick="sauverNote()">Enregistrer</button>
+            </div>
+        </div>
+    </div>
+
     <!-- Confirmation de l'export complet. Elle ne demande pas « êtes-vous
          sûr » : elle dit ce que le fichier contiendra et ce qu'il faudra en
          faire. Une confirmation qui n'apprend rien se clique sans la lire. -->

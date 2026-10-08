@@ -200,8 +200,8 @@ pris que le projet Extérieur du hub :
 
 | `type` | Champs |
 |---|---|
-| `fournisseur` | `nom` (obligatoire), `cle` (nom normalisé), `site`, `notes` |
-| `compte` | `fournisseurId`, `libelle`, `email` (obligatoire), `identifiant`, `motDePasse`, `telephone`, `modePaiement`, `destinataire`, `rue`, `codePostal`, `ville`, `principal`, `ordre`, `notes` |
+| `fournisseur` | `nom` (obligatoire), `cle` (nom normalisé), `site`, `notes`, `favori` |
+| `compte` | `fournisseurId`, `libelle`, `email` (obligatoire), `identifiant`, `motDePasse`, `telephone`, `modePaiement`, `destinataire`, `rue`, `codePostal`, `ville`, `principal`, `ordre`, `notes`, `journal` |
 
 Les deux types portent en plus `proprietaire` (email du détenteur), `creePar` (email de
 l'utilisateur **réel**) et les horodatages.
@@ -322,6 +322,48 @@ que les écritures épargnées. Les comptes créés avant cette possibilité n'o
 Supprimer un fournisseur supprime **ses comptes avec lui**, dans un `batch`. Sans ça
 ils resteraient orphelins : invisibles à l'écran, bien présents en base, mots de passe
 inclus.
+
+### Le fournisseur favori
+
+L'étoile à droite du nom fait passer un fournisseur **en tête de page**, devant l'ordre
+alphabétique — celui de la prochaine sortie, pour l'avoir sous la main le jour J sans
+faire défiler. **Un seul à la fois** : en marquer un décoche l'ancien dans le même lot
+d'écriture, comme pour le compte principal. Re-cliquer l'étoile pleine la retire.
+
+Le champ `favori` est sur la fiche, pas dans le navigateur : le jour J on passe de
+l'ordinateur au téléphone, et le favori doit suivre. Comme la fiche est personnelle,
+chacun a le sien. Pas d'`updatedAt` à cette écriture — choisir un favori n'est pas
+modifier la fiche.
+
+### Le journal d'un compte — noter les commandes du jour J
+
+Le bouton **+ Note** de chaque compte ajoute une entrée à son `journal`, un tableau de
+`{ id, date, paiement, texte }` :
+
+- **`date`** — l'heure d'ouverture de la modale par défaut, modifiable (on note souvent
+  le lendemain une commande de la veille).
+- **`paiement`** — **pré-rempli avec le `modePaiement` du compte, et recopié dans la
+  note.** Celui du compte est l'habitude ; celui de la note est ce qui a réellement payé
+  ce jour-là — parfois une autre carte. Recopier plutôt que pointer vers le compte, c'est
+  ce qui garde l'historique juste quand l'habitude change.
+- **`texte`** — facultatif. Une note vide dit déjà « ce compte a servi, à cette heure,
+  avec ce moyen de paiement ».
+
+Un compte qui porte une note **datée d'aujourd'hui** prend un liseré vert : en pleine
+sortie, on voit d'un coup d'œil ceux qui sont passés et ceux qui restent. Les trois
+notes les plus récentes s'affichent sous la fiche, le reste se déplie. La recherche porte
+aussi sur le journal — chercher « Portugal » retrouve les comptes d'où l'on a commandé.
+
+Un tableau sur la fiche plutôt qu'un document par note : la note vit et meurt avec son
+compte (aucune suppression en cascade à écrire), arrive par le même `onSnapshot`, et ne
+demande **aucun changement des règles Firestore**. L'ajout passe par `arrayUnion`, pour
+que deux notes posées presque en même temps depuis deux appareils ne s'écrasent pas ;
+modifier ou supprimer réécrit le tableau. Pas d'`updatedAt` non plus : « modifié le »
+continue de parler des identifiants du compte.
+
+> Le journal ne remplace pas la page **Achats** : il dit *quel compte a servi et
+> quand*, en trois secondes, le jour J. La ligne d'achat — article, montant, statut —
+> se saisit ensuite, à tête reposée.
 
 ### Mots de passe : le risque assumé
 
@@ -453,6 +495,10 @@ Deux détails qui ne sont pas cosmétiques :
   les anciens le jour où on fait le ménage.
 - **L'export courant garde `motDePasseDefini`** sur chaque compte. Sans ça, une
   restauration laisserait des comptes muets sans qu'on sache lesquels sont incomplets.
+
+Les deux exports portent aussi le `journal` de chaque compte (dates en ISO) et le
+`favori` de chaque fournisseur : l'historique des sorties ne se reconstitue de nulle
+part ailleurs.
 
 ⚠ Une sauvegarde sans les mots de passe **ne restaure pas tout**. Le fichier le dit
 lui-même dans son champ `avertissement`. Pour un filet complet, c'est le second bouton —

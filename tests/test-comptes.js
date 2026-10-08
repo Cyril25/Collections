@@ -109,7 +109,10 @@ const requetes = [];
 const firebase = {
   firestore: Object.assign(() => fauxDb, {
     Timestamp: { fromDate: (d) => ({ toDate: () => d }) },
-    FieldValue: { serverTimestamp: () => ({ __serveur: true }) },
+    FieldValue: {
+      serverTimestamp: () => ({ __serveur: true }),
+      arrayUnion: (...elementsAjoutes) => ({ __arrayUnion: elementsAjoutes }),
+    },
   }),
 };
 
@@ -586,6 +589,263 @@ sandbox.ouvrirExportComplet();
 (ecouteurs.keydown || []).forEach((fn) => fn({ key: 'Escape' }));
 verifie('Echap referme la modale d\'export sans telecharger',
   elements['modal-export'].style.display === 'none' && telechargements.length === 2);
+
+// Le faux Firestore n'a pas d'ecouteur : on rejoue a la main ce que
+// onSnapshot ferait, y compris un arrayUnion.
+function rejouerEcritures() {
+  ecritures.forEach((e) => {
+    const fiche = sandbox.fournisseurs.find((f) => f.id === e.id)
+      || sandbox.comptes.find((c) => c.id === e.id);
+    if (!fiche || !e.data) return;
+    Object.keys(e.data).forEach((champ) => {
+      const valeur = e.data[champ];
+      fiche[champ] = valeur && valeur.__arrayUnion
+        ? (fiche[champ] || []).concat(valeur.__arrayUnion)
+        : valeur;
+    });
+  });
+}
+const nomsAffiches = () => [...elements['fournisseurs-list'].innerHTML.matchAll(/<h2>([^<]*)<\/h2>/g)]
+  .map((m) => m[1]).join('|');
+
+// --- 12. Fournisseur favori --------------------------------------
+// Le gain de quelques secondes le jour J : le fournisseur de la sortie
+// en tete de page, sans defiler. Un seul a la fois.
+console.log('\n12. Fournisseur favori');
+elements['search-input'].value = '';
+sandbox.render();
+verifie('Sans favori, l\'ordre est alphabetique',
+  nomsAffiches() === 'INCM Portugal|Monnaie de Paris|MTM Monaco &amp; Cie|Ordre &amp; Cie', nomsAffiches());
+verifie('Chaque fournisseur porte une etoile creuse',
+  (elements['fournisseurs-list'].innerHTML.match(/fa-regular fa-star/g) || []).length === sandbox.fournisseurs.length);
+
+ecritures.length = 0;
+sandbox.basculerFavori('f4');
+verifie('Marquer un favori n\'ecrit que lui quand il n\'y en avait pas',
+  ecritures.length === 1 && ecritures[0].id === 'f4' && ecritures[0].data.favori === true,
+  JSON.stringify(ecritures));
+verifie('...sans toucher a « modifie le »', !('updatedAt' in ecritures[0].data));
+rejouerEcritures();
+sandbox.render();
+verifie('Le favori passe en tete, les autres restent alphabetiques',
+  nomsAffiches() === 'Ordre &amp; Cie|INCM Portugal|Monnaie de Paris|MTM Monaco &amp; Cie', nomsAffiches());
+verifie('Son etoile est pleine et annoncee comme enfoncee',
+  /btn-favori btn-favori--actif" aria-pressed="true"[^>]*><i class="fa-solid fa-star">/
+    .test(elements['fournisseurs-list'].innerHTML));
+
+// Le cas du jour J : on change de sortie, donc de favori. L'ancien doit
+// etre decoche dans le MEME lot, sinon deux blocs se disputent la tete.
+ecritures.length = 0;
+sandbox.basculerFavori('f2');
+verifie('Le nouveau favori remplace l\'ancien dans le meme lot',
+  ecritures.length === 2
+  && ecritures.some((e) => e.id === 'f2' && e.data.favori === true)
+  && ecritures.some((e) => e.id === 'f4' && e.data.favori === false),
+  JSON.stringify(ecritures));
+rejouerEcritures();
+sandbox.render();
+verifie('Un seul favori a la fois',
+  sandbox.fournisseurs.filter((f) => f.favori).map((f) => f.id).join(',') === 'f2');
+verifie('L\'ancien favori retrouve sa place alphabetique',
+  nomsAffiches() === 'INCM Portugal|Monnaie de Paris|MTM Monaco &amp; Cie|Ordre &amp; Cie', nomsAffiches());
+
+sandbox.basculerFavori('f3');
+rejouerEcritures();
+elements['search-input'].value = 'mo';
+sandbox.render();
+verifie('Pendant une recherche, le favori reste en tete des resultats',
+  nomsAffiches().startsWith('MTM Monaco'), nomsAffiches());
+elements['search-input'].value = '';
+
+ecritures.length = 0;
+sandbox.basculerFavori('f3');
+verifie('Re-cliquer l\'etoile pleine retire le favori, sans en designer d\'autre',
+  ecritures.length === 1 && ecritures[0].id === 'f3' && ecritures[0].data.favori === false,
+  JSON.stringify(ecritures));
+rejouerEcritures();
+
+// --- 13. Journal d'un compte -------------------------------------
+console.log('\n13. Journal d\'un compte');
+
+// L'aller-retour avec <input type="datetime-local"> : l'heure saisie
+// doit etre l'heure enregistree, pas une heure decalee par l'UTC.
+const neufHeures = new Date(2026, 9, 7, 9, 2);
+verifie('Une date devient la valeur du champ, en heure locale',
+  sandbox.versChampDateHeure(neufHeures) === '2026-10-07T09:02', sandbox.versChampDateHeure(neufHeures));
+verifie('...et revient intacte',
+  sandbox.depuisChampDateHeure('2026-10-07T09:02').getTime() === neufHeures.getTime());
+verifie('Un champ vide ou bancal ne donne pas de date',
+  sandbox.depuisChampDateHeure('') === null && sandbox.depuisChampDateHeure('demain') === null);
+
+const reference = new Date(2026, 9, 8, 15, 0);
+verifie('Le jour meme se lit « aujourd\'hui »',
+  sandbox.libelleDateNote(new Date(2026, 9, 8, 9, 2), reference) === 'aujourd\'hui 09:02',
+  sandbox.libelleDateNote(new Date(2026, 9, 8, 9, 2), reference));
+verifie('La veille se lit « hier »',
+  sandbox.libelleDateNote(new Date(2026, 9, 7, 21, 15), reference) === 'hier 21:15',
+  sandbox.libelleDateNote(new Date(2026, 9, 7, 21, 15), reference));
+verifie('La veille d\'un 1er du mois aussi',
+  sandbox.libelleDateNote(new Date(2026, 8, 30, 8, 0), new Date(2026, 9, 1, 10, 0)) === 'hier 08:00');
+verifie('Une autre annee se signale',
+  /2025/.test(sandbox.libelleDateNote(new Date(2025, 9, 7, 9, 2), reference)),
+  sandbox.libelleDateNote(new Date(2025, 9, 7, 9, 2), reference));
+
+// Ouvrir une note neuve : maintenant, et le moyen de paiement du compte.
+const avantOuverture = Date.now();
+sandbox.ouvrirModaleNote('c2', null);
+verifie('La modale s\'ouvre', elements['modal-note'].style.display === 'flex');
+const ecart = Math.abs(sandbox.depuisChampDateHeure(elements['fn-date'].value).getTime() - avantOuverture);
+verifie('La date proposee est maintenant', ecart < 2 * 60 * 1000, elements['fn-date'].value);
+verifie('Le moyen de paiement du compte est pre-rempli',
+  elements['fn-paiement'].value === 'Carte BNP', elements['fn-paiement'].value);
+verifie('La modale dit de quel compte il s\'agit',
+  /Monnaie de Paris/.test(elements['fn-compte'].textContent)
+  && /autre@gmail\.com/.test(elements['fn-compte'].textContent), elements['fn-compte'].textContent);
+verifie('Pas de bouton Supprimer sur une note neuve', elements['fn-supprimer'].style.display === 'none');
+
+// Le jour J on a paye avec une autre carte : la note le retient, le
+// compte garde son habitude.
+elements['fn-paiement'].value = 'Carte Revolut';
+elements['fn-texte'].value = "Sortie Portugal — 2 € BU + coffret L'Étoile <b>";
+ecritures.length = 0;
+sandbox.sauverNote();
+const ajout = ecritures[0];
+verifie('Une note neuve s\'ajoute par arrayUnion, sans reecrire le journal',
+  ecritures.length === 1 && ajout.id === 'c2' && ajout.data.journal && ajout.data.journal.__arrayUnion,
+  JSON.stringify(ecritures));
+const noteAjoutee = ajout.data.journal.__arrayUnion[0];
+verifie('La note porte le paiement reellement utilise',
+  noteAjoutee.paiement === 'Carte Revolut', noteAjoutee.paiement);
+verifie('...un identifiant, une date et le commentaire',
+  !!noteAjoutee.id && typeof noteAjoutee.date.toDate === 'function'
+  && noteAjoutee.texte.startsWith('Sortie Portugal'));
+verifie('Le moyen de paiement du compte n\'est pas touche',
+  Object.keys(ajout.data).join(',') === 'journal', Object.keys(ajout.data).join(','));
+rejouerEcritures();
+
+// Une note datee d'hier (le cas de la sortie portugaise, notee le
+// lendemain) sur un autre compte : il n'est PAS « utilise aujourd'hui ».
+const hier = new Date(); hier.setDate(hier.getDate() - 1);
+sandbox.comptes.find((c) => c.id === 'c1').journal = [
+  { id: 'nh', date: { toDate: () => hier }, paiement: 'Carte Boursorama', texte: 'Commande Portugal' },
+];
+sandbox.render();
+const htmlJournal = elements['fournisseurs-list'].innerHTML;
+verifie('Le compte noté aujourd\'hui est marque comme utilise',
+  /class="compte compte--utilise" id="compte-c2"/.test(htmlJournal));
+verifie('Celui noté hier ne l\'est pas',
+  /class="compte" id="compte-c1"/.test(htmlJournal));
+verifie('Celui sans note non plus', /class="compte" id="compte-c3"/.test(htmlJournal));
+verifie('La note du jour est affichee, avec le paiement du jour',
+  htmlJournal.includes('journal-note--du-jour') && htmlJournal.includes('Carte Revolut'));
+verifie('Le commentaire est echappe',
+  htmlJournal.includes('&lt;b&gt;') && !htmlJournal.includes('coffret L\'Étoile <b>'));
+const carteDe = (id) => (elements['fournisseurs-list'].innerHTML.split('id="compte-' + id + '"')[1] || '')
+  .split('</article>')[0];
+verifie('Un compte sans note n\'affiche pas de journal vide',
+  carteDe('c3') !== '' && !carteDe('c3').includes('class="journal"'));
+
+// Le glisser-deposer reecrit className : il ne doit pas effacer la marque.
+sandbox.classerCarte('c2', 'compte--cible');
+verifie('Le glisser-deposer conserve la marque « utilise »',
+  elements['compte-c2'].className === 'compte compte--utilise compte--cible', elements['compte-c2'].className);
+sandbox.classerCarte('c2', '');
+
+// Au-dela de NOTES_VISIBLES, le reste se replie.
+const compteBavard = sandbox.comptes.find((c) => c.id === 'd1');
+compteBavard.journal = [1, 2, 3, 4, 5].map((j) => (
+  { id: 'v' + j, date: { toDate: () => new Date(2026, 4, j, 10, 0) }, paiement: '', texte: 'sortie ' + j }));
+verifie('Le journal est trie du plus recent au plus ancien',
+  sandbox.journalDe(compteBavard).map((n) => n.id).join(',') === 'v5,v4,v3,v2,v1');
+sandbox.render();
+let carteBavarde = carteDe('d1');
+verifie('Seules les trois plus recentes sont affichees',
+  carteBavarde.includes('sortie 5') && carteBavarde.includes('sortie 3') && !carteBavarde.includes('sortie 2'));
+verifie('...avec de quoi deplier les deux autres',
+  carteBavarde.includes('+ 2 notes plus anciennes'));
+sandbox.basculerJournal('d1');
+carteBavarde = carteDe('d1');
+verifie('Deplie, le journal montre tout', carteBavarde.includes('sortie 1') && carteBavarde.includes('Replier'));
+sandbox.basculerJournal('d1');
+
+// Modifier : la note est retrouvee par son id, et seule elle change.
+const idNote = noteAjoutee.id;
+sandbox.ouvrirModaleNote('c2', idNote);
+verifie('Modifier recharge le paiement de la note, pas celui du compte',
+  elements['fn-paiement'].value === 'Carte Revolut', elements['fn-paiement'].value);
+verifie('...et propose Supprimer', elements['fn-supprimer'].style.display === '');
+elements['fn-texte'].value = 'Sortie Portugal — finalement 3 rouleaux';
+elements['fn-date'].value = '2026-10-07T09:02';
+sandbox.comptes.find((c) => c.id === 'c2').journal.push(
+  { id: 'autre', date: { toDate: () => neufHeures }, paiement: 'PayPal', texte: 'ne pas toucher' });
+ecritures.length = 0;
+sandbox.sauverNote();
+const majNote = ecritures[0] && ecritures[0].data.journal;
+verifie('Une modification reecrit le journal sans en changer la taille',
+  Array.isArray(majNote) && majNote.length === 2, JSON.stringify(ecritures));
+verifie('...ne change que la note visee',
+  majNote.find((n) => n.id === idNote).texte === 'Sortie Portugal — finalement 3 rouleaux'
+  && majNote.find((n) => n.id === 'autre').texte === 'ne pas toucher');
+verifie('...et prend la date corrigee a la main',
+  majNote.find((n) => n.id === idNote).date.toDate().getTime() === neufHeures.getTime());
+rejouerEcritures();
+
+// Une date effacee ne doit rien enregistrer.
+sandbox.ouvrirModaleNote('c2', null);
+elements['fn-date'].value = '';
+ecritures.length = 0;
+sandbox.sauverNote();
+verifie('Sans date, rien ne part en base', ecritures.length === 0);
+verifie('...et on le dit', /date/i.test(sandbox.toasts[sandbox.toasts.length - 1].message));
+// Echap ferme la modale de note, comme les autres.
+(ecouteurs.keydown || []).forEach((fn) => fn({ key: 'Escape' }));
+verifie('Echap referme la modale de note', elements['modal-note'].style.display === 'none');
+
+// Les suggestions de paiement apprennent aussi des notes.
+sandbox.ouvrirModaleNote('c1', null);
+verifie('Un paiement saisi dans une note est suggere ensuite',
+  elements['paiement-list'].innerHTML.includes('Carte Revolut'));
+sandbox.fermerModaleNote();
+
+// La recherche voit le journal : « rouleaux » retrouve le fournisseur.
+elements['search-input'].value = 'rouleaux';
+sandbox.render();
+verifie('La recherche porte aussi sur les notes du journal',
+  nomsAffiches() === 'Monnaie de Paris', nomsAffiches());
+elements['search-input'].value = '';
+sandbox.render();
+
+let souciJournal = null;
+for (const m of elements['fournisseurs-list'].innerHTML.matchAll(/onclick="([^"]*)"/g)) {
+  try { new vm.Script(decodeHtml(m[1])); } catch (e) { souciJournal = decodeHtml(m[1]) + ' :: ' + e.message; }
+}
+verifie('Les onclick du journal et de l\'etoile sont du JS valide', souciJournal === null, souciJournal);
+
+// L'export garde le journal : c'est l'historique des sorties, il ne se
+// reconstitue de nulle part ailleurs.
+sandbox.exporterJson();
+const exportJournal = JSON.parse(blobs.get(telechargements[telechargements.length - 1].href).parts[0]);
+const journalExporte = exportJournal.fournisseurs.find((f) => f.nom === 'Monnaie de Paris').comptes
+  .find((c) => c.email === 'autre@gmail.com').journal;
+verifie('L\'export contient le journal, dates en ISO',
+  journalExporte.length === 2 && journalExporte.every((n) => /^\d{4}-\d{2}-\d{2}T/.test(n.date)),
+  JSON.stringify(journalExporte));
+verifie('L\'export dit quel fournisseur est favori',
+  exportJournal.fournisseurs.every((f) => typeof f.favori === 'boolean'));
+
+// Supprimer : passe par la confirmation, et ne retire que cette note.
+sandbox.ouvrirModaleNote('c2', idNote);
+sandbox.ouvrirSuppressionNote();
+verifie('Supprimer une note demande confirmation',
+  elements['modal-suppression'].style.display === 'flex');
+ecritures.length = 0;
+sandbox.confirmerSuppression();
+const apresSuppression = ecritures[0] && ecritures[0].data.journal;
+verifie('La suppression ne retire que la note visee',
+  Array.isArray(apresSuppression) && apresSuppression.length === 1 && apresSuppression[0].id === 'autre',
+  JSON.stringify(ecritures));
+verifie('...et ne supprime pas le compte',
+  !ecritures.some((e) => e.type === 'delete'));
 
 // --- Bilan -------------------------------------------------------
 console.log('\n' + (echecs === 0 ? 'Tout passe.' : echecs + ' echec(s).'));

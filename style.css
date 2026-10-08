@@ -993,6 +993,31 @@ body.login-page {
     color: var(--color-primary);
 }
 
+.fournisseur-nom {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+}
+
+/* L'etoile creuse est volontairement pale : elle signale une possibilite,
+   pas un etat. Pleine et doree, elle se lit comme la punaise du compte
+   principal — meme famille d'idee, « celui-la d'abord ». */
+.btn-favori {
+    background: transparent;
+    border: none;
+    padding: 4px 6px;
+    border-radius: var(--radius-sm);
+    color: var(--color-border);
+    font-size: 0.95rem;
+    line-height: 1;
+    cursor: pointer;
+    transition: color var(--transition-fast);
+}
+.btn-favori:hover { color: #C9A227; }
+.btn-favori--actif { color: #C9A227; }
+
+.fournisseur--favori { border-left: 3px solid #C9A227; }
+
 .fournisseur-site {
     font-size: 0.8rem;
     color: var(--color-secondary);
@@ -1089,6 +1114,14 @@ body.login-page {
 }
 .compte:hover .compte-poignee--fixe { color: #C9A227; }
 
+/* Une note datee d'aujourd'hui : le compte a servi pendant la sortie en
+   cours. Le liseré vert suffit a distinguer, en survolant un bloc, ceux
+   qui sont passes de ceux qui restent. */
+.compte--utilise {
+    border-left: 3px solid var(--color-success);
+    background: #F3FAF3;
+}
+
 .compte--glisse { opacity: 0.4; }
 
 /* La cible du depot : un liseré franc, sans decalage de mise en page —
@@ -1146,6 +1179,94 @@ body.login-page {
     font-size: 0.78rem;
     color: var(--color-text-muted);
 }
+
+.compte-entete-actions {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    flex-shrink: 0;
+}
+
+/* Le geste du jour J : visible sans etre criard, plus petit que
+   « + Compte » dont il reprend la forme. */
+.btn-noter {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 3px 8px;
+    background: #fff;
+    color: var(--color-primary);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-sm);
+    font-family: inherit;
+    font-size: 0.74rem;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: background var(--transition-fast);
+}
+.btn-noter:hover { background: var(--color-surface); }
+.btn-noter i { font-size: 0.7em; }
+
+/* ---- Journal d'un compte ---- */
+.journal {
+    margin-top: 8px;
+    padding-top: 6px;
+    border-top: 1px dashed var(--color-border-light);
+}
+
+.journal-note {
+    display: flex;
+    align-items: flex-start;
+    gap: 6px;
+    padding: 4px 6px;
+    margin: 0 -6px;
+    border-radius: var(--radius-sm);
+}
+.journal-note .icon-btn { padding: 2px 6px; font-size: 0.75rem; }
+
+.journal-note--du-jour { background: #E3F2E4; }
+
+.journal-corps { flex: 1; min-width: 0; }
+
+.journal-quand {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 4px 6px;
+    font-size: 0.76rem;
+    color: var(--color-text-secondary);
+    font-weight: 500;
+}
+.journal-quand > i { font-size: 0.85em; color: var(--color-text-disabled); }
+.journal-note--du-jour .journal-quand { color: var(--color-success); }
+.journal-note--du-jour .journal-quand > i { color: var(--color-success); }
+
+.journal-paiement {
+    font-weight: 400;
+    color: var(--color-text-muted);
+}
+.journal-paiement i { font-size: 0.85em; margin-right: 3px; }
+
+/* pre-line : un commentaire saisi sur plusieurs lignes garde ses
+   retours, sans qu'on ait a injecter des <br> dans le HTML. */
+.journal-texte {
+    font-size: 0.8rem;
+    color: var(--color-text);
+    white-space: pre-line;
+    word-break: break-word;
+}
+
+.journal-bascule {
+    background: transparent;
+    border: none;
+    padding: 2px 0;
+    margin-top: 2px;
+    font-family: inherit;
+    font-size: 0.74rem;
+    color: var(--color-secondary);
+    cursor: pointer;
+}
+.journal-bascule:hover { text-decoration: underline; }
 
 /* L'adresse tient sur plusieurs lignes : l'icone et le bouton se calent
    en haut, sinon ils flottent au milieu du bloc. */

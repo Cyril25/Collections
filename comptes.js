@@ -4,9 +4,13 @@
 // Collection Firestore « fournisseurs ». UN SEUL TIROIR pour deux
 // choses, discriminees par un champ « type » :
 //
-//   type: 'fournisseur'  nom, cle, site, notes
+//   type: 'fournisseur'  nom, cle, site, notes, favori
 //   type: 'compte'       fournisseurId, libelle, email, identifiant,
-//                        motDePasse, principal, notes
+//                        motDePasse, principal, notes, journal
+//
+// Le « journal » d'un compte est un tableau de notes { id, date,
+// paiement, texte } posées le jour d'une sortie : « commandé à 9 h 02,
+// payé avec la carte BNP, deux rouleaux Portugal ». Voir la section 8b.
 //
 // CHACUN CHEZ SOI. Les deux types portent un champ « proprietaire »
 // (email du detenteur) et les regles Firestore ne laissent voir que ses
@@ -36,6 +40,11 @@ var DELAI_MASQUAGE_MS = 30000;
 
 var MASQUE = '••••••••';
 
+// Notes affichées d'office sous un compte. Au-delà, un bouton déplie le
+// reste : un compte utilisé à chaque sortie en accumule des dizaines, et
+// le jour J ce sont les dernières qui comptent.
+var NOTES_VISIBLES = 3;
+
 // ------------------------------------------------------------
 // 1. État de la page
 // ------------------------------------------------------------
@@ -47,6 +56,9 @@ var minuteries = {};
 var fournisseurEnEdition = null;
 var compteEnEdition = null;
 var fournisseurDuCompte = null;
+var compteDeLaNote = null;
+var noteEnEdition = null;
+var journauxDeplies = {};
 var suppressionEnCours = null;
 var premierChargement = true;
 // Email dont on affiche les fiches. C'est celui de la personne
@@ -208,6 +220,91 @@ function comptesDe(fournisseurId) {
     });
 }
 
+// Le favori d'abord, puis l'alphabet. Un seul favori par personne : c'est
+// le fournisseur de la prochaine sortie, celui qu'on veut sous la main
+// sans faire défiler la page.
+function trierFournisseurs(liste) {
+    return liste.slice().sort(function(a, b) {
+        if (!!b.favori !== !!a.favori) return b.favori ? 1 : -1;
+        return (a.nom || '').localeCompare(b.nom || '', 'fr');
+    });
+}
+
+// Les notes du plus récent au plus ancien : le jour J, c'est la dernière
+// commande qu'on cherche des yeux.
+function journalDe(compte) {
+    return (compte && compte.journal || []).slice().sort(function(a, b) {
+        return instantNote(b) - instantNote(a);
+    });
+}
+
+function instantNote(note) {
+    var date = toDate(note && note.date);
+    return date ? date.getTime() : 0;
+}
+
+function memeJour(a, b) {
+    return a.getFullYear() === b.getFullYear()
+        && a.getMonth() === b.getMonth()
+        && a.getDate() === b.getDate();
+}
+
+function deuxChiffres(n) {
+    return (n < 10 ? '0' : '') + n;
+}
+
+function heureMinute(date) {
+    return deuxChiffres(date.getHours()) + ':' + deuxChiffres(date.getMinutes());
+}
+
+// « aujourd'hui 09:02 », « hier 21:15 », sinon la date courte. L'année
+// n'apparaît que si ce n'est pas la courante : elle ne sert qu'à relire
+// l'historique d'une sortie passée.
+function libelleDateNote(date, maintenant) {
+    if (!date) return '—';
+    var heure = heureMinute(date);
+    if (memeJour(date, maintenant)) return 'aujourd\'hui ' + heure;
+    var veille = new Date(maintenant.getFullYear(), maintenant.getMonth(), maintenant.getDate() - 1);
+    if (memeJour(date, veille)) return 'hier ' + heure;
+    var options = { day: 'numeric', month: 'short' };
+    if (date.getFullYear() !== maintenant.getFullYear()) options.year = 'numeric';
+    return date.toLocaleDateString('fr-FR', options) + ' ' + heure;
+}
+
+// Un compte « utilisé aujourd'hui » porte au moins une note datée du
+// jour. C'est ce qui permet, en pleine sortie, de voir d'un coup d'œil
+// les comptes déjà passés et ceux qui restent.
+function utiliseLe(compte, jour) {
+    return journalDe(compte).some(function(note) {
+        var date = toDate(note.date);
+        return !!date && memeJour(date, jour);
+    });
+}
+
+// Aller-retour avec <input type="datetime-local">, qui parle en heure
+// locale (« 2026-10-07T09:02 »). On découpe à la main plutôt que de
+// confier la chaîne à new Date() : c'est le même piège que les dates de
+// la page Achats, où une forme mal reconnue bascule en UTC et décale
+// l'heure affichée.
+function versChampDateHeure(date) {
+    return date.getFullYear() + '-' + deuxChiffres(date.getMonth() + 1) + '-' + deuxChiffres(date.getDate())
+        + 'T' + heureMinute(date);
+}
+
+function depuisChampDateHeure(valeur) {
+    var morceaux = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/.exec(String(valeur || ''));
+    if (!morceaux) return null;
+    var date = new Date(+morceaux[1], +morceaux[2] - 1, +morceaux[3], +morceaux[4], +morceaux[5]);
+    return isNaN(date.getTime()) ? null : date;
+}
+
+// Un identifiant par note, pour la retrouver au moment de la modifier :
+// la position dans le tableau ne suffit pas, l'onSnapshot peut l'avoir
+// réordonné entre l'ouverture de la modale et l'enregistrement.
+function nouvelIdNote() {
+    return 'n' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+}
+
 function indexDans(liste, id) {
     for (var i = 0; i < liste.length; i++) {
         if (liste[i].id === id) return i;
@@ -280,6 +377,11 @@ function correspond(fournisseur, terme) {
               + ' ' + (compte.identifiant || '') + ' ' + (compte.notes || '')
               + ' ' + (compte.telephone || '') + ' ' + (compte.modePaiement || '')
               + ' ' + adresseFormatee(compte).join(' ');
+        // Le journal aussi : chercher « Portugal » retrouve les comptes
+        // d'où on a commandé la dernière sortie portugaise.
+        journalDe(compte).forEach(function(note) {
+            texte += ' ' + (note.texte || '') + ' ' + (note.paiement || '');
+        });
     });
     return texte.toLowerCase().indexOf(terme) !== -1;
 }
@@ -294,8 +396,7 @@ function render() {
     if (!liste) return;
 
     var terme = termeRecherche();
-    var visibles = fournisseurs.filter(function(f) { return correspond(f, terme); })
-        .sort(function(a, b) { return (a.nom || '').localeCompare(b.nom || '', 'fr'); });
+    var visibles = trierFournisseurs(fournisseurs.filter(function(f) { return correspond(f, terme); }));
 
     if (compteur) {
         compteur.textContent = visibles.length + ' fournisseur' + (visibles.length > 1 ? 's' : '')
@@ -335,10 +436,24 @@ function renderFournisseur(fournisseur) {
           + '<i class="fa-solid fa-arrow-up-right-from-square"></i> ' + escapeHtml(libelleUrl(url)) + '</a>'
         : '';
 
-    return '<section class="fournisseur">'
+    // Étoile creuse sur tous les autres : elle dit qu'on PEUT en faire le
+    // favori, à l'endroit où on le cherche — à droite du nom.
+    var favori = !!fournisseur.favori;
+    var etoile = '<button type="button" class="btn-favori' + (favori ? ' btn-favori--actif' : '') + '" '
+        + 'aria-pressed="' + favori + '" '
+        + 'title="' + (favori
+            ? 'Fournisseur favori — cliquer pour le retirer'
+            : 'En faire le favori : il passera en tête de la page') + '" '
+        + 'onclick="basculerFavori(\'' + idAttr + '\')">'
+        + '<i class="fa-' + (favori ? 'solid' : 'regular') + ' fa-star"></i></button>';
+
+    return '<section class="fournisseur' + (favori ? ' fournisseur--favori' : '') + '">'
         + '<header class="fournisseur-entete">'
         +   '<div class="fournisseur-titre">'
-        +     '<h2>' + escapeHtml(fournisseur.nom || '(sans nom)') + '</h2>'
+        +     '<div class="fournisseur-nom">'
+        +       '<h2>' + escapeHtml(fournisseur.nom || '(sans nom)') + '</h2>'
+        +       etoile
+        +     '</div>'
         +     lienSite
         +   '</div>'
         +   '<div class="fournisseur-actions">'
@@ -446,16 +561,83 @@ function renderCompte(compte) {
         +   '<span class="compte-valeur">Pas de mot de passe enregistré</span>'
         + '</div>';
 
-    return '<article class="compte" id="compte-' + idHtml + '"' + attributsGlisser + '>'
+    // La classe passe par classeCarte() et non en dur : le glisser-déposer
+    // réécrit className, et effacerait sinon la marque « utilisé ».
+    return '<article class="' + classeCarte(compte.id, '') + '" id="compte-' + idHtml + '"' + attributsGlisser + '>'
         + '<div class="compte-entete">'
         +   '<div class="compte-entete-gauche">' + poignee + entete + '</div>'
-        +   '<button type="button" class="icon-btn" title="Modifier ce compte" '
-        +     'onclick="ouvrirModaleCompte(\'' + jsAttr(compte.fournisseurId) + '\', \'' + idAttr + '\')">'
-        +     '<i class="fa-solid fa-pen"></i></button>'
+        +   '<div class="compte-entete-actions">'
+        +     '<button type="button" class="btn-noter" title="Noter une commande passée depuis ce compte" '
+        +       'onclick="ouvrirModaleNote(\'' + idAttr + '\', null)">'
+        +       '<i class="fa-solid fa-plus"></i> Note</button>'
+        +     '<button type="button" class="icon-btn" title="Modifier ce compte" '
+        +       'onclick="ouvrirModaleCompte(\'' + jsAttr(compte.fournisseurId) + '\', \'' + idAttr + '\')">'
+        +       '<i class="fa-solid fa-pen"></i></button>'
+        +   '</div>'
         + '</div>'
         + ligneEmail + ligneIdentifiant + ligneMdp + ligneTelephone + lignePaiement + ligneAdresse
         + (compte.notes ? '<p class="compte-notes">' + escapeHtml(compte.notes) + '</p>' : '')
+        + renderJournal(compte)
         + '</article>';
+}
+
+// Le journal sous la fiche : les notes les plus récentes, celles du jour
+// en vert. Rien du tout quand il est vide — un « aucune note » sur chaque
+// compte encombrerait la page les jours sans sortie, c'est-à-dire presque
+// tous.
+function renderJournal(compte) {
+    var notes = journalDe(compte);
+    if (!notes.length) return '';
+
+    var maintenant = new Date();
+    var deplie = !!journauxDeplies[compte.id];
+    var affichees = deplie ? notes : notes.slice(0, NOTES_VISIBLES);
+    var reste = notes.length - NOTES_VISIBLES;
+    var idAttr = jsAttr(compte.id);
+
+    var bascule = reste > 0
+        ? '<button type="button" class="journal-bascule" onclick="basculerJournal(\'' + idAttr + '\')">'
+          + (deplie ? 'Replier'
+                    : '+ ' + reste + ' note' + (reste > 1 ? 's' : '') + ' plus ancienne' + (reste > 1 ? 's' : ''))
+          + '</button>'
+        : '';
+
+    return '<div class="journal">'
+        + affichees.map(function(note) {
+            var date = toDate(note.date);
+            var duJour = !!date && memeJour(date, maintenant);
+            return '<div class="journal-note' + (duJour ? ' journal-note--du-jour' : '') + '">'
+                + '<div class="journal-corps">'
+                +   '<div class="journal-quand">'
+                +     (duJour ? '<i class="fa-solid fa-check"></i>' : '<i class="fa-regular fa-clock"></i>')
+                +     escapeHtml(libelleDateNote(date, maintenant))
+                +     (note.paiement
+                        ? '<span class="journal-paiement"><i class="fa-solid fa-credit-card"></i>'
+                          + escapeHtml(note.paiement) + '</span>'
+                        : '')
+                +   '</div>'
+                +   (note.texte ? '<div class="journal-texte">' + escapeHtml(note.texte) + '</div>' : '')
+                + '</div>'
+                + '<button type="button" class="icon-btn" title="Modifier cette note" '
+                +   'onclick="ouvrirModaleNote(\'' + idAttr + '\', \'' + jsAttr(note.id) + '\')">'
+                +   '<i class="fa-solid fa-pen"></i></button>'
+                + '</div>';
+        }).join('')
+        + bascule
+        + '</div>';
+}
+
+function basculerJournal(compteId) {
+    journauxDeplies[compteId] = !journauxDeplies[compteId];
+    render();
+}
+
+// La classe d'une fiche de compte, avec ou sans état de glisser-déposer.
+function classeCarte(id, modificateur) {
+    var compte = trouverCompte(id);
+    return 'compte'
+        + (compte && utiliseLe(compte, new Date()) ? ' compte--utilise' : '')
+        + (modificateur ? ' ' + modificateur : '');
 }
 
 // ------------------------------------------------------------
@@ -475,7 +657,7 @@ function carteDe(id) {
 
 function classerCarte(id, modificateur) {
     var carte = carteDe(id);
-    if (carte) carte.className = 'compte' + (modificateur ? ' ' + modificateur : '');
+    if (carte) carte.className = classeCarte(id, modificateur);
 }
 
 // La fiche ne devient déplaçable que le temps d'un appui sur la poignée.
@@ -740,12 +922,43 @@ function sauverFournisseur() {
 }
 
 // ------------------------------------------------------------
+// 7b. Le fournisseur favori
+// ------------------------------------------------------------
+// Un seul à la fois : le marquer décoche l'ancien dans le même lot,
+// comme pour le compte principal. Deux favoris se disputeraient la tête
+// de page, et l'étoile ne voudrait plus rien dire. Re-cliquer l'étoile
+// pleine la retire : la page revient à l'alphabet pur.
+//
+// Stocké sur la fiche plutôt que dans le navigateur : le jour J on passe
+// de l'ordinateur au téléphone, et le favori doit suivre. Comme la fiche
+// est personnelle, chacun a le sien.
+function basculerFavori(id) {
+    var fournisseur = trouverFournisseur(id);
+    if (!fournisseur) return;
+    var devientFavori = !fournisseur.favori;
+
+    var lot = db.batch();
+    // Pas de `updatedAt` : choisir un favori n'est pas modifier la fiche.
+    lot.update(db.collection('fournisseurs').doc(id), { favori: devientFavori });
+    if (devientFavori) {
+        fournisseurs.forEach(function(autre) {
+            if (autre.id === id || !autre.favori) return;
+            lot.update(db.collection('fournisseurs').doc(autre.id), { favori: false });
+        });
+    }
+    lot.commit().catch(function(erreur) {
+        console.error(erreur);
+        showToast('Favori impossible à enregistrer : ' + erreur.message, 'error');
+    });
+}
+
+// ------------------------------------------------------------
 // 8. Modale compte
 // ------------------------------------------------------------
 // Les moyens de paiement se suggèrent depuis ceux déjà saisis : rien à
 // maintenir en dur, et « carte BNP » s'écrit pareil partout dès la
 // deuxième fois. Même mécanique que les collections et vendeurs de la
-// page Achats.
+// page Achats. La liste sert aux deux modales, compte et note.
 function remplirPaiements() {
     var cible = document.getElementById('paiement-list');
     if (!cible) return;
@@ -753,6 +966,10 @@ function remplirPaiements() {
     comptes.forEach(function(compte) {
         var valeur = (compte.modePaiement || '').trim();
         if (valeur) vus[valeur] = true;
+        journalDe(compte).forEach(function(note) {
+            var paiement = (note.paiement || '').trim();
+            if (paiement) vus[paiement] = true;
+        });
     });
     cible.innerHTML = Object.keys(vus).sort().map(function(valeur) {
         return '<option value="' + escapeAttr(valeur) + '"></option>';
@@ -875,6 +1092,115 @@ function sauverCompte() {
 }
 
 // ------------------------------------------------------------
+// 8b. Le journal d'un compte — noter une commande le jour J
+// ------------------------------------------------------------
+// Une note = quand, payé avec quoi, et un commentaire libre. Elle sert
+// à savoir après coup quels comptes ont servi pendant une sortie, et
+// lesquels sont restés de côté.
+//
+// LE MOYEN DE PAIEMENT EST RECOPIÉ DANS LA NOTE, pas lu sur le compte.
+// Celui du compte est l'habitude ; celui de la note est ce qui a
+// réellement payé ce jour-là — une autre carte, parfois. Et si
+// l'habitude change plus tard, l'historique ne doit pas changer avec
+// elle. D'où le pré-remplissage : le cas courant ne coûte rien à
+// saisir, l'exception se corrige d'un mot.
+//
+// Pourquoi un tableau sur la fiche du compte plutôt qu'un document par
+// note : la note vit et meurt avec son compte (aucune suppression en
+// cascade à écrire), arrive par le même onSnapshot, et sort dans
+// l'export sans rien changer aux règles Firestore.
+function ouvrirModaleNote(compteId, noteId) {
+    var compte = trouverCompte(compteId);
+    if (!compte) return;
+    compteDeLaNote = compteId;
+    noteEnEdition = noteId || null;
+    var note = null;
+    if (noteId) {
+        (compte.journal || []).forEach(function(n) { if (n.id === noteId) note = n; });
+        if (!note) return;
+    }
+    var fournisseur = trouverFournisseur(compte.fournisseurId);
+
+    document.getElementById('titre-note').textContent = note ? 'Modifier la note' : 'Nouvelle note';
+    document.getElementById('fn-compte').textContent =
+        (fournisseur ? (fournisseur.nom || '(sans nom)') + ' — ' : '')
+        + (compte.libelle ? compte.libelle + ' (' + compte.email + ')' : compte.email);
+
+    remplirPaiements();
+    // L'heure d'ouverture de la modale, pas celle de l'enregistrement :
+    // c'est le moment où l'on vient de commander.
+    document.getElementById('fn-date').value = versChampDateHeure(note ? (toDate(note.date) || new Date()) : new Date());
+    document.getElementById('fn-paiement').value = note ? (note.paiement || '') : (compte.modePaiement || '');
+    document.getElementById('fn-texte').value = note ? (note.texte || '') : '';
+
+    document.getElementById('fn-supprimer').style.display = note ? '' : 'none';
+    document.getElementById('modal-note').style.display = 'flex';
+    // Date et paiement sont déjà justes neuf fois sur dix : le curseur
+    // va directement au commentaire.
+    document.getElementById('fn-texte').focus();
+}
+
+function fermerModaleNote() {
+    document.getElementById('modal-note').style.display = 'none';
+    compteDeLaNote = null;
+    noteEnEdition = null;
+}
+
+function sauverNote() {
+    var compte = trouverCompte(compteDeLaNote);
+    if (!compte) return;
+
+    var date = depuisChampDateHeure(document.getElementById('fn-date').value);
+    if (!date) {
+        showToast('La date et l\'heure de la note sont obligatoires.', 'error');
+        document.getElementById('fn-date').focus();
+        return;
+    }
+
+    // Le commentaire est facultatif : une note vide dit déjà « ce compte a
+    // servi, à cette heure, avec ce moyen de paiement » — c'est l'essentiel
+    // pour savoir lesquels restent.
+    var note = {
+        id:       noteEnEdition || nouvelIdNote(),
+        date:     firebase.firestore.Timestamp.fromDate(date),
+        paiement: document.getElementById('fn-paiement').value.trim(),
+        texte:    document.getElementById('fn-texte').value.trim()
+    };
+
+    // Pas de `updatedAt` : noter une commande n'est pas modifier le
+    // compte, et « modifié le » doit continuer à parler des identifiants.
+    var reference = db.collection('fournisseurs').doc(compte.id);
+    var modification = !!noteEnEdition;
+    var operation;
+    if (modification) {
+        operation = reference.update({
+            journal: (compte.journal || []).map(function(n) { return n.id === note.id ? note : n; })
+        });
+    } else {
+        // arrayUnion plutôt que réécrire le tableau : deux notes posées
+        // presque en même temps, depuis le téléphone et l'ordinateur, ne
+        // doivent pas s'écraser l'une l'autre.
+        operation = reference.update({ journal: firebase.firestore.FieldValue.arrayUnion(note) });
+    }
+
+    operation.then(function() {
+        showToast(modification ? 'Note mise à jour.' : 'Note ajoutée.', 'success');
+        fermerModaleNote();
+    }).catch(function(erreur) {
+        console.error(erreur);
+        showToast('Enregistrement impossible : ' + erreur.message, 'error');
+    });
+}
+
+function ouvrirSuppressionNote() {
+    if (!compteDeLaNote || !noteEnEdition) return;
+    suppressionEnCours = { quoi: 'note', id: compteDeLaNote, noteId: noteEnEdition };
+    document.getElementById('suppression-titre').textContent = 'Supprimer cette note ?';
+    document.getElementById('suppression-detail').textContent = 'Suppression définitive.';
+    document.getElementById('modal-suppression').style.display = 'flex';
+}
+
+// ------------------------------------------------------------
 // 9. Suppression
 // ------------------------------------------------------------
 function ouvrirSuppressionFournisseur() {
@@ -922,13 +1248,21 @@ function confirmerSuppression() {
             lot.delete(db.collection('fournisseurs').doc(compte.id));
         });
         operation = lot.commit();
+    } else if (cible.quoi === 'note') {
+        var compte = trouverCompte(cible.id);
+        if (!compte) return fermerSuppression();
+        operation = db.collection('fournisseurs').doc(cible.id).update({
+            journal: (compte.journal || []).filter(function(n) { return n.id !== cible.noteId; })
+        });
     } else {
         operation = db.collection('fournisseurs').doc(cible.id).delete();
     }
 
     operation.then(function() {
-        showToast(cible.quoi === TYPE_FOURNISSEUR ? 'Fournisseur supprimé.' : 'Compte supprimé.', 'success');
+        showToast(cible.quoi === TYPE_FOURNISSEUR ? 'Fournisseur supprimé.'
+            : cible.quoi === 'note' ? 'Note supprimée.' : 'Compte supprimé.', 'success');
         fermerSuppression();
+        fermerModaleNote();
         fermerModaleCompte();
         fermerModaleFournisseur();
     }).catch(function(erreur) {
@@ -1004,10 +1338,11 @@ function contenuExport(avecMotsDePasse) {
             return (a.nom || '').localeCompare(b.nom || '', 'fr');
         }).map(function(fournisseur) {
             return {
-                id:    fournisseur.id,
-                nom:   fournisseur.nom || '',
-                site:  fournisseur.site || '',
-                notes: fournisseur.notes || '',
+                id:     fournisseur.id,
+                nom:    fournisseur.nom || '',
+                site:   fournisseur.site || '',
+                notes:  fournisseur.notes || '',
+                favori: !!fournisseur.favori,
                 comptes: comptesDe(fournisseur.id).map(function(compte) {
                     return {
                         id:          compte.id,
@@ -1028,7 +1363,18 @@ function contenuExport(avecMotsDePasse) {
                         codePostal:   compte.codePostal || '',
                         ville:        compte.ville || '',
                         principal:    !!compte.principal,
-                        notes:        compte.notes || ''
+                        notes:        compte.notes || '',
+                        // Date en ISO : un Timestamp Firestore ne
+                        // survit pas à JSON.stringify sous une forme
+                        // qu'on puisse relire.
+                        journal: journalDe(compte).map(function(note) {
+                            var date = toDate(note.date);
+                            return {
+                                date:     date ? date.toISOString() : null,
+                                paiement: note.paiement || '',
+                                texte:    note.texte || ''
+                            };
+                        })
                     };
                 })
             };
@@ -1103,6 +1449,8 @@ document.addEventListener('keydown', function(evenement) {
         fermerExportComplet();
     } else if (document.getElementById('modal-suppression').style.display === 'flex') {
         fermerSuppression();
+    } else if (document.getElementById('modal-note').style.display === 'flex') {
+        fermerModaleNote();
     } else if (document.getElementById('modal-compte').style.display === 'flex') {
         fermerModaleCompte();
     } else if (document.getElementById('modal-fournisseur').style.display === 'flex') {
